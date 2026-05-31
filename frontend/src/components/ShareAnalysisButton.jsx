@@ -2,12 +2,14 @@ import { useEffect, useState } from "react";
 import { Share2, Copy, X, Link as LinkIcon, ShieldOff, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import api from "../lib/api";
+import ConfirmModal from "./ConfirmModal";
 
 export default function ShareAnalysisButton({ analysisId, testIdPrefix = "share" }) {
   const [open, setOpen] = useState(false);
   const [share, setShare] = useState(null);
   const [loading, setLoading] = useState(false);
   const [revoking, setRevoking] = useState(false);
+  const [showRevokeConfirm, setShowRevokeConfirm] = useState(false);
 
   async function openModal() {
     setOpen(true);
@@ -32,12 +34,12 @@ export default function ShareAnalysisButton({ analysisId, testIdPrefix = "share"
 
   async function revoke() {
     if (!share) return;
-    if (!confirm("Revoke this share link? People with the link won't be able to view it anymore.")) return;
     setRevoking(true);
     try {
       await api.delete(`/shares/${share.share_id}`);
       toast.success("Link revoked");
       setShare(null);
+      setShowRevokeConfirm(false);
       setOpen(false);
     } catch {
       toast.error("Couldn't revoke");
@@ -92,14 +94,25 @@ export default function ShareAnalysisButton({ analysisId, testIdPrefix = "share"
 
             {share && (
               <div className="mt-5 flex items-center justify-end gap-2">
-                <button onClick={revoke} disabled={revoking} className="btn-ghost rounded-md px-3 py-2 text-xs inline-flex items-center gap-1.5 disabled:opacity-70" data-testid={`${testIdPrefix}-revoke-btn`}>
-                  {revoking ? <><Loader2 size={13} className="animate-spin"/> Revoking…</> : <><ShieldOff size={13}/> Revoke link</>}
+                <button onClick={() => setShowRevokeConfirm(true)} disabled={revoking} className="btn-ghost rounded-md px-3 py-2 text-xs inline-flex items-center gap-1.5 disabled:opacity-70" data-testid={`${testIdPrefix}-revoke-btn`}>
+                  <ShieldOff size={13}/> Revoke link
                 </button>
               </div>
             )}
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        open={showRevokeConfirm}
+        title="Revoke share link?"
+        description="People with this link will no longer be able to view the analysis."
+        confirmLabel={revoking ? "Revoking..." : "Revoke link"}
+        tone="danger"
+        busy={revoking}
+        onCancel={() => setShowRevokeConfirm(false)}
+        onConfirm={revoke}
+      />
     </>
   );
 }

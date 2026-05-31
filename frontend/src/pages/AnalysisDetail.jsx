@@ -32,6 +32,7 @@ import { toast } from "sonner";
 
 import ShareAnalysisButton from "../components/ShareAnalysisButton";
 import EmailVetButton from "../components/EmailVetButton";
+import ConfirmModal from "../components/ConfirmModal";
 
 const URGENCY_CHIP = {
   urgent: "chip-urgent",
@@ -61,6 +62,8 @@ export default function AnalysisDetail() {
   const [savedLineKeys, setSavedLineKeys] = useState({});
   const [extractingMarkers, setExtractingMarkers] = useState(false);
   const [markersResult, setMarkersResult] = useState(null); // null | { count, date }
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // #8 — follow-up question
   const [qaQuestion, setQaQuestion]   = useState("");
@@ -128,14 +131,16 @@ export default function AnalysisDetail() {
   }
 
   async function deleteAnalysis() {
-    if (!confirm("Delete this analysis?")) return;
-
+    setDeleting(true);
     try {
       await api.delete(`/estimates/${id}`);
       toast.success("Deleted");
+      setShowDeleteConfirm(false);
       navigate("/dashboard");
     } catch {
       toast.error("Couldn't delete");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -354,6 +359,17 @@ ${(a.cost_saving_options || []).map((x) => `- ${x}`).join("\n")}
 
   return (
     <div className="space-y-6 pb-24">
+      <ConfirmModal
+        open={showDeleteConfirm}
+        title="Delete this analysis?"
+        description="This removes the saved bill analysis from your account. This action cannot be undone."
+        confirmLabel={deleting ? "Deleting..." : "Delete analysis"}
+        tone="danger"
+        busy={deleting}
+        onCancel={() => setShowDeleteConfirm(false)}
+        onConfirm={deleteAnalysis}
+      />
+
       {emergencyMode && (
         <section className="relative overflow-hidden rounded-[34px] bg-[#1F1E1B] text-white">
           <div className="absolute inset-0 opacity-[0.08]">
@@ -461,7 +477,7 @@ ${(a.cost_saving_options || []).map((x) => `- ${x}`).join("\n")}
             </button>
 
             <button
-              onClick={deleteAnalysis}
+              onClick={() => setShowDeleteConfirm(true)}
               className="btn-ghost rounded-xl px-4 py-2 text-xs inline-flex items-center gap-2"
             >
               <Trash2 size={13} />

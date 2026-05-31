@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Plus, Trash2, Loader2, Tag, Check, Eye, EyeOff, Save } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
+import ConfirmModal from "@/components/ConfirmModal";
 
 export default function Promos() {
   const [promos,      setPromos]      = useState([]);
@@ -9,6 +10,7 @@ export default function Promos() {
   const [showForm,    setShowForm]    = useState(false);
   const [saving,      setSaving]      = useState(false);
   const [deactivating, setDeactivating] = useState(null);
+  const [promoToDeactivate, setPromoToDeactivate] = useState(null);
   const [banner,      setBanner]      = useState({
     enabled: false,
     title: "",
@@ -100,11 +102,11 @@ export default function Promos() {
   };
 
   const deactivate = async (id, code) => {
-    if (!window.confirm(`Deactivate ${code}?`)) return;
     setDeactivating(id);
     try {
       await api.delete(`/admin/portal/promos/${id}`);
       toast.success("Promo deactivated");
+      setPromoToDeactivate(null);
       setPromos(ps => ps.filter(p => p.id !== id));
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Couldn't deactivate");
@@ -125,6 +127,17 @@ export default function Promos() {
 
   return (
     <div className="space-y-6">
+      <ConfirmModal
+        open={Boolean(promoToDeactivate)}
+        title="Deactivate promo?"
+        description={promoToDeactivate ? `${promoToDeactivate.code} will stop being available for future redemptions.` : ""}
+        confirmLabel={deactivating ? "Deactivating..." : "Deactivate promo"}
+        tone="danger"
+        busy={Boolean(deactivating)}
+        onCancel={() => setPromoToDeactivate(null)}
+        onConfirm={() => promoToDeactivate && deactivate(promoToDeactivate.id, promoToDeactivate.code)}
+      />
+
       <div className="flex items-end justify-between">
         <div>
           <div className="text-[10px] uppercase tracking-widest text-[#65635C] font-semibold mb-1">Sales</div>
@@ -311,7 +324,7 @@ export default function Promos() {
                     </div>
                   </div>
                 </div>
-                <button onClick={() => deactivate(p.id, p.code)} disabled={deactivating === p.id}
+                <button onClick={() => setPromoToDeactivate({ id: p.id, code: p.code })} disabled={deactivating === p.id}
                   className="text-[#65635C] hover:text-[#F87171] transition disabled:opacity-40"
                   title="Deactivate"
                 >

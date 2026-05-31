@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Send, Sparkles, Loader2, Users, Check } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
+import ConfirmModal from "@/components/ConfirmModal";
 
 const SEGMENTS = [
   { id: "newsletter",  label: "Newsletter subscribers",   desc: "Users who opted into the newsletter" },
@@ -23,6 +24,7 @@ export default function Broadcast() {
   const [sent,        setSent]        = useState(null);
   const [history,     setHistory]     = useState(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [showSendConfirm, setShowSendConfirm] = useState(false);
 
   const checkAudience = async () => {
     setCounting(true);
@@ -52,13 +54,13 @@ export default function Broadcast() {
 
   const send = async () => {
     if (!subject.trim() || !body.trim()) { toast.error("Subject and body required."); return; }
-    if (!window.confirm(`Send to ${SEGMENTS.find(s=>s.id===segment)?.label}? This cannot be undone.`)) return;
     setSending(true);
     try {
       const { data } = await api.post("/admin/portal/broadcast", {
         subject, html_body: body, plain_body: body, segment
       });
       setSent(data);
+      setShowSendConfirm(false);
       toast.success(`Sent to ${data.sent} recipients!`);
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Broadcast failed");
@@ -75,6 +77,17 @@ export default function Broadcast() {
 
   return (
     <div className="space-y-6 max-w-2xl">
+      <ConfirmModal
+        open={showSendConfirm}
+        title="Send broadcast?"
+        description={`This will email ${SEGMENTS.find(s => s.id === segment)?.label || "the selected audience"}. This cannot be undone.`}
+        confirmLabel={sending ? "Sending..." : "Send broadcast"}
+        tone="warning"
+        busy={sending}
+        onCancel={() => setShowSendConfirm(false)}
+        onConfirm={send}
+      />
+
       <div className="flex items-end justify-between">
         <div>
           <div className="text-[10px] uppercase tracking-widest text-[#65635C] font-semibold mb-1">Communications</div>
@@ -149,7 +162,7 @@ export default function Broadcast() {
         </div>
       </div>
 
-      <button onClick={send} disabled={sending || !subject.trim() || !body.trim()}
+      <button onClick={() => setShowSendConfirm(true)} disabled={sending || !subject.trim() || !body.trim()}
         className="rounded-xl bg-[#D26D53] hover:bg-[#C05E45] text-white text-sm font-semibold px-6 py-3 inline-flex items-center gap-2 disabled:opacity-40 transition"
       >
         {sending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}

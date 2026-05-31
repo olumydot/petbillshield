@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { toast } from "sonner";
 import api, { BACKEND_ORIGIN } from "../lib/api";
 
 const BACKEND = BACKEND_ORIGIN;
@@ -33,7 +34,7 @@ export default function ProfilePictureButton({ user, refresh }) {
       await refresh();
     } catch (err) {
       console.error(err);
-      alert("Upload failed");
+      toast.error("Upload failed. Please try another image.");
     } finally {
       setUploading(false);
     }

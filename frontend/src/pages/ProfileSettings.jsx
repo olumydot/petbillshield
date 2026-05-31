@@ -11,6 +11,7 @@ import { useAuth } from "../context/AuthContext";
 import { useBilling } from "../lib/billing";
 import api from "@/lib/api";
 import PromoBanner from "../components/PromoBanner";
+import ConfirmModal from "../components/ConfirmModal";
 // Import from /pure so Stripe.js is NOT side-loaded on module import.
 // It only loads when loadStripe() is explicitly called (i.e. when the
 // user clicks "Update card"). This stops the dev banner appearing on
@@ -319,6 +320,7 @@ function BillingSection() {
   const [loadingSetup,setLoadingSetup]= useState(false);
   const [cancelling,  setCancelling]  = useState(false);
   const [reactivating,setReactivating]= useState(false);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const stripeRef = useRef(null);
 
   // Load saved payment methods
@@ -341,11 +343,11 @@ function BillingSection() {
   }
 
   async function handleCancelPlan() {
-    if (!window.confirm("Cancel your subscription? You keep access until the end of your billing period.")) return;
     setCancelling(true);
     try {
       const res = await cancelPlan();
       const endsAt = res.ends_at ? new Date(res.ends_at).toLocaleDateString() : "renewal date";
+      setShowCancelConfirm(false);
       toast.success(`Subscription cancelled. Access continues until ${endsAt}.`);
     } catch (e) { toast.error(e?.response?.data?.detail || "Could not cancel."); }
     finally { setCancelling(false); }
@@ -467,7 +469,7 @@ function BillingSection() {
                 {reactivating ? "Reactivating…" : "Reactivate subscription"}
               </button>
             ) : (
-              <button onClick={handleCancelPlan} disabled={cancelling}
+              <button onClick={() => setShowCancelConfirm(true)} disabled={cancelling}
                 className="text-xs text-[#8A887F] hover:text-[#D26D53] underline underline-offset-2 transition-colors disabled:opacity-50 shrink-0">
                 {cancelling ? "Cancelling…" : "Cancel subscription"}
               </button>
@@ -475,6 +477,16 @@ function BillingSection() {
           </div>
         )}
       </div>
+      <ConfirmModal
+        open={showCancelConfirm}
+        title="Cancel subscription?"
+        description="You will keep premium access until the end of your current billing period. Your pet records and saved analyses stay in your account."
+        confirmLabel={cancelling ? "Cancelling..." : "Cancel subscription"}
+        tone="danger"
+        busy={cancelling}
+        onCancel={() => setShowCancelConfirm(false)}
+        onConfirm={handleCancelPlan}
+      />
     </div>
   );
 }

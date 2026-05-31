@@ -23,6 +23,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   CheckCircle2,
+  Menu,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import SafetyDisclaimer from "../components/SafetyDisclaimer";
@@ -131,6 +132,7 @@ export default function DashboardLayout() {
   const [reminders, setReminders]             = useState([]);
   const [reminderBadge, setReminderBadge]     = useState(null);
   const [showBellDropdown, setShowBellDropdown] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   // Sidebar collapse — single key, no user-specific logic.
   // State is intentionally NOT reactive to auth loading; it reads once on mount.
@@ -165,6 +167,11 @@ export default function DashboardLayout() {
 
   const bellTimerRef                          = useRef(null);
   const isPricingPage = location.pathname === "/dashboard/pricing";
+
+  useEffect(() => {
+    setMobileNavOpen(false);
+    setShowBellDropdown(false);
+  }, [location.pathname]);
 
   function toggleSidebar() {
     setSidebarCollapsed((v) => {
@@ -416,16 +423,31 @@ export default function DashboardLayout() {
     >
       <header className="glass-header sticky top-0 z-40">
         <div className="max-w-[1400px] mx-auto px-5 sm:px-8 h-16 flex items-center justify-between">
-          <Link
-            to="/"
-            className="flex items-center gap-2.5 group"
-            data-testid="dash-logo-link"
-          >
-            <PetVaultWordmark iconSize={30} className="group-hover:opacity-90 transition-opacity" />
-          </Link>
+          <div className="flex items-center gap-2.5 min-w-0">
+            <button
+              type="button"
+              onClick={() => setMobileNavOpen(true)}
+              className="lg:hidden inline-flex items-center gap-2 rounded-xl border border-[#E5E2D9] bg-[#FAF9F6] px-3 py-2 text-sm font-semibold text-[#2D2C28] shadow-sm"
+              aria-label="Open dashboard menu"
+              aria-expanded={mobileNavOpen}
+              data-testid="mobile-dashboard-menu-btn"
+            >
+              <Menu size={17} />
+              Menu
+            </button>
+            <Link
+              to="/"
+              className="flex items-center gap-2.5 group min-w-0"
+              data-testid="dash-logo-link"
+            >
+              <PetVaultWordmark iconSize={30} className="group-hover:opacity-90 transition-opacity" />
+            </Link>
+          </div>
 
           <div className="flex items-center gap-3">
-            <LanguageToggle />
+            <div className="hidden sm:block">
+              <LanguageToggle />
+            </div>
 
             {billingLoading ? (
               /* Skeleton pill — prevents "Free tier" flash while billing loads */
@@ -490,7 +512,7 @@ export default function DashboardLayout() {
 
             <button
               onClick={logout}
-              className="btn-ghost rounded-md px-3 py-2 text-xs inline-flex items-center gap-1.5"
+              className="btn-ghost rounded-md px-3 py-2 text-xs hidden sm:inline-flex items-center gap-1.5"
               data-testid="dash-logout-btn"
             >
               <LogOut size={14} /> {t("common.sign_out")}
@@ -498,6 +520,83 @@ export default function DashboardLayout() {
           </div>
         </div>
       </header>
+
+      {mobileNavOpen && (
+        <div className="fixed inset-0 z-[85] lg:hidden" role="dialog" aria-modal="true" aria-label="Dashboard menu">
+          <div className="absolute inset-0 bg-[#2D2C28]/55 backdrop-blur-sm" onClick={() => setMobileNavOpen(false)} />
+          <aside className="absolute left-0 top-0 h-full w-[min(88vw,360px)] overflow-y-auto bg-[#FAF9F6] shadow-2xl">
+            <div className="sticky top-0 z-10 border-b border-[#E5E2D9] bg-[#FAF9F6]/95 px-4 py-4 backdrop-blur">
+              <div className="flex items-center justify-between gap-3">
+                <PetVaultWordmark iconSize={30} />
+                <button
+                  type="button"
+                  onClick={() => setMobileNavOpen(false)}
+                  className="rounded-full p-2 text-[#65635C] hover:bg-[#F2F0E9] hover:text-[#2D2C28]"
+                  aria-label="Close dashboard menu"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="mt-3 flex items-center justify-between gap-3">
+                <Link
+                  to="/dashboard/pricing"
+                  className={`chip ${billing?.active ? "chip-wait" : "chip-warning"} hover:opacity-90`}
+                >
+                  <Sparkles size={11} />
+                  {billingLoading ? "Checking plan" : tier.shortLabel}
+                </Link>
+                <LanguageToggle />
+              </div>
+            </div>
+
+            <nav className="px-3 py-4 space-y-1">
+              {navItems.map((n) => (
+                <NavLink
+                  key={n.to}
+                  to={n.to}
+                  end={n.end}
+                  data-testid={`mobile-${n.testid}`}
+                  className={({ isActive }) =>
+                    `flex items-center gap-3 rounded-2xl px-3 py-3 text-sm transition-colors ${
+                      isActive
+                        ? "bg-[#2D2C28] text-[#FAF9F6] font-semibold"
+                        : "text-[#65635C] hover:bg-[#F2F0E9] hover:text-[#2D2C28]"
+                    }`
+                  }
+                >
+                  {({ isActive }) => (
+                    <>
+                      <span
+                        className={`w-9 h-9 rounded-xl inline-flex items-center justify-center shrink-0 ${
+                          isActive
+                            ? "bg-white/15 text-[#FAF9F6]"
+                            : "bg-[#F2F0E9] text-[#8A887F]"
+                        }`}
+                      >
+                        <n.icon size={16} strokeWidth={1.75} />
+                      </span>
+                      <span className="flex-1">{n.label}</span>
+                      {n.locked && (
+                        <Lock size={13} className={isActive ? "text-[#FAF9F6]/55" : "text-[#D26D53]"} />
+                      )}
+                    </>
+                  )}
+                </NavLink>
+              ))}
+            </nav>
+
+            <div className="border-t border-[#E5E2D9] px-4 py-4">
+              <button
+                onClick={logout}
+                className="w-full rounded-2xl border border-[#E5E2D9] bg-white px-4 py-3 text-sm font-semibold text-[#2D2C28] inline-flex items-center justify-center gap-2"
+              >
+                <LogOut size={15} />
+                {t("common.sign_out")}
+              </button>
+            </div>
+          </aside>
+        </div>
+      )}
 
       <div className="max-w-[1400px] mx-auto px-5 sm:px-8 flex gap-6 py-8 items-start">
 
