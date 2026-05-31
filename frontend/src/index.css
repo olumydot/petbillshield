@@ -279,3 +279,23 @@
   border-color: #D26D53;
   box-shadow: 0 0 0 4px rgba(210, 109, 83, 0.12);
 }
+
+.checkout-embed-compact {
+  min-height: 520px;
+}
+
+.checkout-embed-compact iframe {
+  max-width: 100%;
+}
+
+@media (max-height: 760px) {
+  .checkout-embed-compact {
+    min-height: 460px;
+  }
+}
+
+@media (max-width: 640px) {
+  .checkout-embed-compact {
+    min-height: 500px;
+  }
+}

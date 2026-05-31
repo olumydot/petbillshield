@@ -143,24 +143,24 @@ export default function CheckoutModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4
                  bg-[#2D2C28]/45 backdrop-blur-sm"
       onClick={(e) => { if (e.target === e.currentTarget && !activating) onClose(); }}
     >
       <div
-        className="w-full max-w-lg rounded-[28px] bg-[#FAF9F6] border border-[#E5E2D9]
-                   shadow-2xl overflow-hidden"
+        className="w-full max-w-[500px] max-h-[94vh] rounded-[22px] bg-[#FAF9F6] border border-[#E5E2D9]
+                   shadow-2xl overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* ── Header ── */}
-        <div className="flex items-start justify-between p-6 pb-5 border-b border-[#E5E2D9]">
+        <div className="flex items-start justify-between p-4 sm:p-5 border-b border-[#E5E2D9] shrink-0">
           <div>
             <div className="text-[10px] uppercase tracking-[0.18em] font-semibold text-[#D26D53] mb-0.5">
               Subscribe
             </div>
-            <h2 className="font-serif-display text-2xl leading-tight">{planLabel}</h2>
+            <h2 className="font-serif-display text-xl sm:text-2xl leading-tight">{planLabel}</h2>
             <div className="flex items-center gap-2 mt-1">
-              <p className="text-xl font-bold text-[#2D2C28]">{planPrice}</p>
+              <p className="text-lg sm:text-xl font-bold text-[#2D2C28]">{planPrice}</p>
               {promoApplied && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-[#E8F5EA] border border-[#C8E8D4] px-2 py-0.5 text-[10px] font-bold text-[#2F6B45] uppercase tracking-wider">
                   <CheckCircle2 size={10} /> Promo applied
@@ -171,7 +171,7 @@ export default function CheckoutModal({
           <button
             onClick={onClose}
             disabled={activating}
-            className="w-9 h-9 rounded-full bg-[#F2F0E9] inline-flex items-center
+            className="w-8 h-8 rounded-full bg-[#F2F0E9] inline-flex items-center
                        justify-center text-[#65635C] hover:bg-[#E5E2D9] transition-colors
                        disabled:opacity-40"
             aria-label="Close"
@@ -181,9 +181,9 @@ export default function CheckoutModal({
         </div>
 
         {/* ── Body ── */}
-        <div className="p-6 min-h-[200px]">
+        <div className="p-4 sm:p-5 min-h-[160px] flex-1 overflow-y-auto overscroll-contain">
           {loading && (
-            <div className="py-12 flex justify-center">
+            <div className="py-10 flex justify-center">
               <Loader2 size={28} className="animate-spin text-[#D26D53]" />
             </div>
           )}
@@ -207,18 +207,20 @@ export default function CheckoutModal({
           )}
 
           {!loading && !initError && !completed && clientSecret && stripePromise.current && (
-            <EmbeddedCheckoutProvider
-              stripe={stripePromise.current}
-              options={options()}
-            >
-              <EmbeddedCheckout />
-            </EmbeddedCheckoutProvider>
+            <div className="checkout-embed-compact">
+              <EmbeddedCheckoutProvider
+                stripe={stripePromise.current}
+                options={options()}
+              >
+                <EmbeddedCheckout />
+              </EmbeddedCheckoutProvider>
+            </div>
           )}
         </div>
 
         {/* ── Footer ── */}
         {!completed && (
-          <div className="px-6 pb-5 flex items-center justify-center gap-5 text-[11px] text-[#8A887F]">
+          <div className="px-4 sm:px-5 py-3 border-t border-[#E5E2D9] flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[10px] sm:text-[11px] text-[#8A887F] shrink-0">
             <span className="flex items-center gap-1">
               <ShieldCheck size={12} /> No hidden fees
             </span>
