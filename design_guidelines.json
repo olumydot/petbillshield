@@ -1,0 +1,80 @@
+{
+  "theme": "light",
+  "archetype": "Organic & Earthy",
+  "colors": {
+    "background": "#FAF9F6",
+    "surface": "#F2F0E9",
+    "surface_glass": "rgba(250, 249, 246, 0.7)",
+    "primary": "#D26D53",
+    "primary_hover": "#BD5D44",
+    "primary_foreground": "#FFFFFF",
+    "secondary": "#556045",
+    "secondary_hover": "#465039",
+    "secondary_foreground": "#FFFFFF",
+    "accent_sage": "#A2AA92",
+    "accent_yellow": "#E4A834",
+    "text_primary": "#2D2C28",
+    "text_secondary": "#65635C",
+    "border": "#E5E2D9"
+  },
+  "typography": {
+    "heading_font": "Cormorant Garamond",
+    "body_font": "Manrope",
+    "heading_weight": "font-light to font-semibold",
+    "body_weight": "font-normal",
+    "h1": "text-4xl sm:text-5xl lg:text-6xl tracking-tight leading-none",
+    "h2": "text-2xl sm:text-3xl lg:text-4xl tracking-tight leading-none",
+    "h3": "text-xl sm:text-2xl leading-snug",
+    "h4": "text-lg sm:text-xl",
+    "body": "text-base leading-relaxed",
+    "small": "text-sm uppercase tracking-[0.2em]"
+  },
+  "layout": {
+    "spacing_scale": "p-4, p-6, p-8, p-12, p-16, p-24",
+    "border_radius": "rounded-lg (max 8px)",
+    "marketing_grid": "grid-cols-1 md:grid-cols-12 gap-8 to gap-12",
+    "dashboard_grid": "grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 to gap-6"
+  },
+  "components": {
+    "buttons": "Flat, sharp or slightly rounded corners (max 8px), strong contrast. Hover states translate-y-[-2px] with shadow-md.",
+    "cards": "Flat background (surface color), 1px solid border (#E5E2D9), no heavy shadows. Internal padding p-6 or p-8.",
+    "header": "Crystal glassmorphism: backdrop-blur-xl bg-[#FAF9F6]/80, 1px bottom border (#E5E2D9).",
+    "vet_estimate_uploader": "Dashed border area (border-primary/50), bg-surface, generous p-12 padding, drag-drop interactions.",
+    "red_flag_chips": "Urgent/Red Flag: bg-red-100 text-red-800. Warning: bg-yellow-100 text-yellow-800. Neutral: bg-stone-200 text-stone-800.",
+    "script_generator": "Soft sage background, monospace or clean serif text area for the script, copy button.",
+    "icons": "lucide-react, stroke-width 1.5, earthy colors.",
+    "data_testid": "MANDATORY on all interactive elements (buttons, links, inputs, cards)."
+  },
+  "motion": {
+    "hover": "transition-transform duration-200 ease-out",
+    "page_load": "staggered fade-up (framer-motion, y: 20, opacity: 0)"
+  },
+  "media": {
+    "hero_image": {
+      "url": "https://static.prod-images.emergentagent.com/jobs/246e6a6e-d794-46ca-a652-ef02580c36cd/images/692e8ce477ea39df11f6784b14d234f9c37d5b3f7b843493e7e817bfaad6b2c8.png",
+      "description": "Magazine-style collage of diverse pets, warm studio lighting.",
+      "placement": "Marketing landing page hero section right column/bento block."
+    },
+    "reassuring_care_image": {
+      "url": "https://static.prod-images.emergentagent.com/jobs/246e6a6e-d794-46ca-a652-ef02580c36cd/images/62e91cf70794e25795e71123ff7b68e2f719c18e7c2342a63d0e69b638403893.png",
+      "description": "Reassuring hand petting a golden retriever in warm light.",
+      "placement": "Trust/Safety section or about section."
+    },
+    "vet_bill_flatlay": {
+      "url": "https://static.prod-images.emergentagent.com/jobs/246e6a6e-d794-46ca-a652-ef02580c36cd/images/e0bc5cec31b130d847dd17d3081b102591c0aeb8f3394731d109018db07ce1c6.png",
+      "description": "Minimalist flat lay of a printed vet bill on a textured linen table.",
+      "placement": "Upload Estimate or How It Works section."
+    }
+  },
+  "instructions_to_main_agent": [
+    "Build a Hybrid Fullstack app with a landing page and an authenticated dashboard.",
+    "Use 'Cormorant Garamond' for headings and 'Manrope' for body text. Do not use Inter for headings.",
+    "Follow the Organic & Earthy palette. Avoid generic purple or pure white.",
+    "Implement the landing page hero with a bento grid or asymmetrical layout. Use the provided 'hero_image'.",
+    "Build the dashboard with the 'Control Room' grid (dense, cardless or 1px border cards, no soft shadows).",
+    "Ensure the upload feature has a drag-and-drop UI with clear feedback.",
+    "Add data-testid attributes to ALL interactive elements (buttons, links, inputs).",
+    "Do not use Shadcn for the marketing page layout structure (use HTML/Tailwind). Use customized Shadcn for dashboard components.",
+    "Ensure safety disclaimers are visible but subtle."
+  ]
+}

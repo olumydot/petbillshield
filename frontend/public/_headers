@@ -1,0 +1,29 @@
+# Netlify / Cloudflare Pages cache rules
+# For Vercel: add "headers" array to vercel.json (same logic, different syntax)
+
+# Hashed JS/CSS bundles — 1 year, immutable
+/static/js/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/static/css/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Fonts loaded from CDN are already cached at source; local fonts
+/*.woff2
+  Cache-Control: public, max-age=31536000, immutable
+
+# Service worker must never be cached so updates propagate immediately
+/sw.js
+  Cache-Control: no-store, max-age=0
+
+# Manifest — short cache so icon/name changes apply quickly
+/manifest.json
+  Cache-Control: public, max-age=86400
+
+# HTML entry point — no cache (ensures users always get the latest build hash)
+/index.html
+  Cache-Control: no-cache, must-revalidate
+
+# Default — short cache for everything else
+/*
+  Cache-Control: public, max-age=3600

@@ -1,0 +1,16 @@
+fastapi
+uvicorn[standard]
+motor
+pydantic[email]
+python-dotenv
+anthropic
+resend
+stripe
+reportlab
+apscheduler
+passlib[bcrypt]
+python-multipart
+httpx
+pypdf
+slowapi
+google-auth

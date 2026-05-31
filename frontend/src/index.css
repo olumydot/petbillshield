@@ -1,0 +1,281 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* PetBill Shield — Organic & Earthy palette */
+@layer base {
+    :root {
+        --background: 48 22% 97%;        /* #FAF9F6 cream */
+        --foreground: 30 6% 16%;         /* #2D2C28 ink */
+        --card: 48 22% 97%;
+        --card-foreground: 30 6% 16%;
+        --popover: 48 22% 97%;
+        --popover-foreground: 30 6% 16%;
+
+        --primary: 13 57% 57%;           /* #D26D53 terracotta */
+        --primary-foreground: 0 0% 100%;
+        --secondary: 84 16% 33%;         /* #556045 sage */
+        --secondary-foreground: 0 0% 100%;
+
+        --muted: 48 22% 92%;             /* #F2F0E9 surface */
+        --muted-foreground: 30 4% 38%;   /* #65635C */
+        --accent: 73 11% 64%;            /* #A2AA92 sage light */
+        --accent-foreground: 30 6% 16%;
+
+        --destructive: 0 65% 50%;
+        --destructive-foreground: 0 0% 98%;
+
+        --border: 42 21% 87%;            /* #E5E2D9 */
+        --input: 42 21% 87%;
+        --ring: 13 57% 57%;
+
+        --chart-1: 13 57% 57%;
+        --chart-2: 84 16% 33%;
+        --chart-3: 36 76% 55%;
+        --chart-4: 73 11% 64%;
+        --chart-5: 27 87% 67%;
+
+        --radius: 0.5rem;
+    }
+}
+
+@layer base {
+    * {
+        @apply border-border;
+    }
+    html, body {
+        background: #FAF9F6;
+        color: #2D2C28;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        font-family: 'Manrope', system-ui, sans-serif;
+        font-feature-settings: 'ss01', 'cv11';
+    }
+}
+
+@layer base {
+    [data-debug-wrapper="true"] {
+        display: contents !important;
+    }
+}
+
+/* Typography utilities */
+.font-serif-display { font-family: 'Cormorant Garamond', 'Times New Roman', serif; font-weight: 500; letter-spacing: -0.01em; }
+.font-mono-clean { font-family: 'JetBrains Mono', monospace; }
+
+.eyebrow {
+    font-family: 'Manrope', sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #65635C;
+}
+
+/* Subtle grain / paper background */
+.paper-grain {
+    background-color: #FAF9F6;
+    background-image:
+        radial-gradient(rgba(45,44,40,0.025) 1px, transparent 1px),
+        radial-gradient(rgba(45,44,40,0.018) 1px, transparent 1px);
+    background-size: 22px 22px, 38px 38px;
+    background-position: 0 0, 11px 19px;
+    transition: background-color 0.6s ease;
+}
+
+/* ── Per-tier dashboard background themes ─────────────────────────────────── */
+
+/* Pet Cost Vault — warm amber parchment */
+[data-plan-theme="vault"].paper-grain {
+    background-color: #FDF6EE;
+    background-image:
+        radial-gradient(rgba(210,109,83,0.025) 1px, transparent 1px),
+        radial-gradient(rgba(210,109,83,0.015) 1px, transparent 1px);
+}
+
+/* Family — soft sage green */
+[data-plan-theme="family"].paper-grain {
+    background-color: #F2F5EF;
+    background-image:
+        radial-gradient(rgba(85,96,69,0.028) 1px, transparent 1px),
+        radial-gradient(rgba(85,96,69,0.018) 1px, transparent 1px);
+}
+
+/* Rescue / Foster — deep charcoal premium */
+[data-plan-theme="rescue"].paper-grain {
+    background-color: #EDECEA;
+    background-image:
+        radial-gradient(rgba(45,44,40,0.04) 1px, transparent 1px),
+        radial-gradient(rgba(45,44,40,0.025) 1px, transparent 1px);
+}
+
+.cream-card {
+    background: #F2F0E9;
+    border: 1px solid #E5E2D9;
+    border-radius: 8px;
+}
+
+.glass-header {
+    background-color: rgba(250, 249, 246, 0.78);
+    backdrop-filter: saturate(140%) blur(16px);
+    -webkit-backdrop-filter: saturate(140%) blur(16px);
+    border-bottom: 1px solid #E5E2D9;
+}
+
+.hairline {
+    border-bottom: 1px solid #E5E2D9;
+}
+
+.btn-primary {
+    background: #D26D53;
+    color: #fff;
+    transition: transform 200ms ease-out, background 200ms ease-out, box-shadow 200ms ease-out;
+}
+.btn-primary:hover {
+    background: #BD5D44;
+    transform: translateY(-2px);
+    box-shadow: 0 12px 24px -16px rgba(189,93,68,0.5);
+}
+
+.btn-secondary {
+    background: #556045;
+    color: #fff;
+    transition: transform 200ms ease-out, background 200ms ease-out;
+}
+.btn-secondary:hover {
+    background: #465039;
+    transform: translateY(-2px);
+}
+
+.btn-ghost {
+    background: transparent;
+    color: #2D2C28;
+    border: 1px solid #E5E2D9;
+    transition: transform 200ms ease-out, background 200ms ease-out, border-color 200ms ease-out;
+}
+.btn-ghost:hover {
+    background: #F2F0E9;
+    border-color: #D26D53;
+    transform: translateY(-2px);
+}
+
+.chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    border: 1px solid transparent;
+}
+
+.chip-urgent  { background: #FCE7E0; color: #8C2D14; border-color: #F5C3B3; }
+.chip-soon    { background: #F8E5BC; color: #6F4B12; border-color: #EFD58A; }
+.chip-wait    { background: #E6EAD8; color: #3D4A2C; border-color: #C9D2B2; }
+.chip-info    { background: #E3E6DC; color: #3D4A2C; border-color: #C9D2B2; }
+.chip-flag    { background: #FCE7E0; color: #8C2D14; border-color: #F5C3B3; }
+.chip-warning { background: #F8E5BC; color: #6F4B12; border-color: #EFD58A; }
+.chip-neutral { background: #ECEAE1; color: #3F3D38; border-color: #DBD8CC; }
+
+/* Magazine-style hover */
+.editorial-link {
+    position: relative;
+    display: inline-block;
+    color: #2D2C28;
+    transition: color 200ms ease-out;
+}
+.editorial-link::after {
+    content: '';
+    position: absolute;
+    left: 0; right: 0; bottom: -2px;
+    height: 1px;
+    background: currentColor;
+    transform: scaleX(0);
+    transform-origin: left center;
+    transition: transform 250ms ease-out;
+}
+.editorial-link:hover { color: #D26D53; }
+.editorial-link:hover::after { transform: scaleX(1); }
+
+/* Drag-drop area */
+.dropzone {
+    border: 1.5px dashed rgba(210, 109, 83, 0.55);
+    background: #F2F0E9;
+    transition: border-color 200ms ease-out, background 200ms ease-out, transform 200ms ease-out;
+    border-radius: 8px;
+}
+.dropzone.is-drag {
+    border-color: #D26D53;
+    background: #FCF1EC;
+    transform: translateY(-1px);
+}
+
+/* Staggered fade-up */
+.fade-up {
+    opacity: 0;
+    transform: translateY(16px);
+    animation: fadeUp 600ms ease-out forwards;
+}
+@keyframes fadeUp {
+    to { opacity: 1; transform: translateY(0); }
+}
+.delay-0   { animation-delay: 0ms; }
+.delay-1   { animation-delay: 80ms; }
+.delay-2   { animation-delay: 160ms; }
+.delay-3   { animation-delay: 240ms; }
+.delay-4   { animation-delay: 320ms; }
+.delay-5   { animation-delay: 400ms; }
+.delay-6   { animation-delay: 480ms; }
+
+::selection { background: #D26D53; color: #fff; }
+
+/* prose styles for AI script display */
+.script-body {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 1.125rem;
+    line-height: 1.7;
+    color: #2D2C28;
+    white-space: pre-wrap;
+}
+
+.kbd {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    background: #F2F0E9;
+    border: 1px solid #E5E2D9;
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 0.1rem 0.4rem;
+    color: #2D2C28;
+}
+
+/* sidebar nav item */
+.nav-item {
+    display: flex; align-items: center; gap: 0.6rem;
+    padding: 0.55rem 0.75rem;
+    border-radius: 6px;
+    color: #65635C;
+    transition: background 180ms ease-out, color 180ms ease-out;
+}
+.nav-item:hover { background: #F2F0E9; color: #2D2C28; }
+.nav-item.active { background: #2D2C28; color: #FAF9F6; }
+
+
+/* premium */
+.input-premium {
+  width: 100%;
+  border-radius: 1rem;
+  border: 1px solid #E5E2D9;
+  background: rgba(255, 255, 255, 0.7);
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.input-premium:focus {
+  border-color: #D26D53;
+  box-shadow: 0 0 0 4px rgba(210, 109, 83, 0.12);
+}

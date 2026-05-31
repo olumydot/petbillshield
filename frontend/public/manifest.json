@@ -1,0 +1,43 @@
+{
+  "name": "PetBill Shield",
+  "short_name": "PetBill",
+  "description": "Understand vet bills before you pay. AI-powered bill analysis, pet health vault, and care reminders.",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#FAF9F6",
+  "theme_color": "#2D2C28",
+  "orientation": "portrait-primary",
+  "categories": ["health", "finance", "lifestyle"],
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Analyze a bill",
+      "short_name": "Analyze",
+      "description": "Upload a vet bill for analysis",
+      "url": "/dashboard/analyze",
+      "icons": [{ "src": "/favicon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "My pets",
+      "short_name": "Pets",
+      "description": "Open your pet vault",
+      "url": "/dashboard/pets",
+      "icons": [{ "src": "/favicon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "Reminders",
+      "short_name": "Reminders",
+      "description": "View upcoming care reminders",
+      "url": "/dashboard/reminders",
+      "icons": [{ "src": "/favicon.svg", "sizes": "any" }]
+    }
+  ]
+}
