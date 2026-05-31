@@ -178,4 +178,4 @@ Known current warning: `PetTimeline.jsx` has an existing React hook dependency l
 
 ## License
 
-MIT
+None
