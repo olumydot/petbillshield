@@ -9,6 +9,7 @@ stripe
 reportlab
 apscheduler
 passlib[bcrypt]
+argon2-cffi
 python-multipart
 httpx
 pypdf
