@@ -1,5 +1,5 @@
 import { useLocation, Link } from "react-router-dom";
-import { LogIn, LogOut, Menu, X } from "lucide-react";
+import { LayoutDashboard, LogIn, LogOut, Menu, X } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import LanguageToggle from "./LanguageToggle";
 import { useTranslation } from "react-i18next";
@@ -72,10 +72,12 @@ export default function Header({ variant = "marketing" }) {
               {!onDashboard && (
                 <Link
                   to="/dashboard"
-                  className="hidden sm:inline-flex btn-primary rounded-md px-4 py-2 text-sm font-semibold"
+                  className="inline-flex btn-primary rounded-md px-3 sm:px-4 py-2 text-xs sm:text-sm font-semibold items-center gap-1.5"
                   data-testid="header-go-to-dashboard"
                 >
-                  {t("common.open_dashboard")}
+                  <LayoutDashboard size={14} strokeWidth={1.75} />
+                  <span className="hidden min-[380px]:inline">{t("common.open_dashboard")}</span>
+                  <span className="min-[380px]:hidden">Dashboard</span>
                 </Link>
               )}
 

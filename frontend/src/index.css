@@ -2,31 +2,31 @@
 @tailwind components;
 @tailwind utilities;
 
-/* PetBill Shield — Organic & Earthy palette */
+/* PetBill Shield — Nocturne palette */
 @layer base {
     :root {
-        --background: 48 22% 97%;        /* #FAF9F6 cream */
-        --foreground: 30 6% 16%;         /* #2D2C28 ink */
-        --card: 48 22% 97%;
-        --card-foreground: 30 6% 16%;
-        --popover: 48 22% 97%;
-        --popover-foreground: 30 6% 16%;
+        --background: 48 22% 7%;         /* #15140E nocturne */
+        --foreground: 38 13% 78%;        /* #D4CEC0 warm ivory */
+        --card: 180 7% 10%;              /* #171C1C deep card */
+        --card-foreground: 38 13% 78%;
+        --popover: 180 7% 10%;
+        --popover-foreground: 38 13% 78%;
 
         --primary: 13 57% 57%;           /* #D26D53 terracotta */
         --primary-foreground: 0 0% 100%;
         --secondary: 84 16% 33%;         /* #556045 sage */
         --secondary-foreground: 0 0% 100%;
 
-        --muted: 48 22% 92%;             /* #F2F0E9 surface */
-        --muted-foreground: 30 4% 38%;   /* #65635C */
+        --muted: 48 15% 16%;
+        --muted-foreground: 38 8% 62%;
         --accent: 73 11% 64%;            /* #A2AA92 sage light */
-        --accent-foreground: 30 6% 16%;
+        --accent-foreground: 38 13% 78%;
 
         --destructive: 0 65% 50%;
         --destructive-foreground: 0 0% 98%;
 
-        --border: 42 21% 87%;            /* #E5E2D9 */
-        --input: 42 21% 87%;
+        --border: 201 10% 25%;
+        --input: 201 10% 25%;
         --ring: 13 57% 57%;
 
         --chart-1: 13 57% 57%;
@@ -44,8 +44,8 @@
         @apply border-border;
     }
     html, body {
-        background: #FAF9F6;
-        color: #2D2C28;
+        background: #15140E;
+        color: #D4CEC0;
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
         font-family: 'Manrope', system-ui, sans-serif;
@@ -69,15 +69,15 @@
     letter-spacing: 0.2em;
     font-size: 0.72rem;
     font-weight: 600;
-    color: #65635C;
+    color: #A8A196;
 }
 
 /* Subtle grain / paper background */
 .paper-grain {
-    background-color: #FAF9F6;
+    background-color: #15140E;
     background-image:
-        radial-gradient(rgba(45,44,40,0.025) 1px, transparent 1px),
-        radial-gradient(rgba(45,44,40,0.018) 1px, transparent 1px);
+        radial-gradient(rgba(212,206,192,0.032) 1px, transparent 1px),
+        radial-gradient(rgba(210,109,83,0.022) 1px, transparent 1px);
     background-size: 22px 22px, 38px 38px;
     background-position: 0 0, 11px 19px;
     transition: background-color 0.6s ease;
@@ -87,43 +87,43 @@
 
 /* Pet Cost Vault — warm amber parchment */
 [data-plan-theme="vault"].paper-grain {
-    background-color: #FDF6EE;
+    background-color: #171109;
     background-image:
-        radial-gradient(rgba(210,109,83,0.025) 1px, transparent 1px),
-        radial-gradient(rgba(210,109,83,0.015) 1px, transparent 1px);
+        radial-gradient(rgba(210,109,83,0.04) 1px, transparent 1px),
+        radial-gradient(rgba(212,206,192,0.018) 1px, transparent 1px);
 }
 
 /* Family — soft sage green */
 [data-plan-theme="family"].paper-grain {
-    background-color: #F2F5EF;
+    background-color: #182012;
     background-image:
-        radial-gradient(rgba(85,96,69,0.028) 1px, transparent 1px),
-        radial-gradient(rgba(85,96,69,0.018) 1px, transparent 1px);
+        radial-gradient(rgba(162,170,146,0.035) 1px, transparent 1px),
+        radial-gradient(rgba(210,109,83,0.015) 1px, transparent 1px);
 }
 
 /* Rescue / Foster — deep charcoal premium */
 [data-plan-theme="rescue"].paper-grain {
-    background-color: #EDECEA;
+    background-color: #141414;
     background-image:
-        radial-gradient(rgba(45,44,40,0.04) 1px, transparent 1px),
-        radial-gradient(rgba(45,44,40,0.025) 1px, transparent 1px);
+        radial-gradient(rgba(250,249,246,0.035) 1px, transparent 1px),
+        radial-gradient(rgba(210,109,83,0.02) 1px, transparent 1px);
 }
 
 .cream-card {
-    background: #F2F0E9;
-    border: 1px solid #E5E2D9;
+    background: #171C1C;
+    border: 1px solid #3A4142;
     border-radius: 8px;
 }
 
 .glass-header {
-    background-color: rgba(250, 249, 246, 0.78);
+    background-color: rgba(21, 20, 14, 0.9);
     backdrop-filter: saturate(140%) blur(16px);
     -webkit-backdrop-filter: saturate(140%) blur(16px);
-    border-bottom: 1px solid #E5E2D9;
+    border-bottom: 1px solid #3A4142;
 }
 
 .hairline {
-    border-bottom: 1px solid #E5E2D9;
+    border-bottom: 1px solid #3A4142;
 }
 
 .btn-primary {
@@ -149,12 +149,12 @@
 
 .btn-ghost {
     background: transparent;
-    color: #2D2C28;
-    border: 1px solid #E5E2D9;
+    color: #D4CEC0;
+    border: 1px solid #3A4142;
     transition: transform 200ms ease-out, background 200ms ease-out, border-color 200ms ease-out;
 }
 .btn-ghost:hover {
-    background: #F2F0E9;
+    background: #1E2423;
     border-color: #D26D53;
     transform: translateY(-2px);
 }
@@ -171,19 +171,19 @@
     border: 1px solid transparent;
 }
 
-.chip-urgent  { background: #FCE7E0; color: #8C2D14; border-color: #F5C3B3; }
-.chip-soon    { background: #F8E5BC; color: #6F4B12; border-color: #EFD58A; }
-.chip-wait    { background: #E6EAD8; color: #3D4A2C; border-color: #C9D2B2; }
-.chip-info    { background: #E3E6DC; color: #3D4A2C; border-color: #C9D2B2; }
-.chip-flag    { background: #FCE7E0; color: #8C2D14; border-color: #F5C3B3; }
-.chip-warning { background: #F8E5BC; color: #6F4B12; border-color: #EFD58A; }
-.chip-neutral { background: #ECEAE1; color: #3F3D38; border-color: #DBD8CC; }
+.chip-urgent  { background: #4A1608; color: #F28A70; border-color: #8C321D; }
+.chip-soon    { background: #352508; color: #E6AE2E; border-color: #7D5B12; }
+.chip-wait    { background: #253015; color: #C9DCA8; border-color: #556045; }
+.chip-info    { background: #182A36; color: #8FC7F6; border-color: #245EA8; }
+.chip-flag    { background: #4A1608; color: #F28A70; border-color: #8C321D; }
+.chip-warning { background: #352508; color: #E6AE2E; border-color: #7D5B12; }
+.chip-neutral { background: #1E2423; color: #D4CEC0; border-color: #3A4142; }
 
 /* Magazine-style hover */
 .editorial-link {
     position: relative;
     display: inline-block;
-    color: #2D2C28;
+    color: #D4CEC0;
     transition: color 200ms ease-out;
 }
 .editorial-link::after {
@@ -202,13 +202,13 @@
 /* Drag-drop area */
 .dropzone {
     border: 1.5px dashed rgba(210, 109, 83, 0.55);
-    background: #F2F0E9;
+    background: #171C1C;
     transition: border-color 200ms ease-out, background 200ms ease-out, transform 200ms ease-out;
     border-radius: 8px;
 }
 .dropzone.is-drag {
     border-color: #D26D53;
-    background: #FCF1EC;
+    background: #281910;
     transform: translateY(-1px);
 }
 
@@ -236,19 +236,19 @@
     font-family: 'Cormorant Garamond', serif;
     font-size: 1.125rem;
     line-height: 1.7;
-    color: #2D2C28;
+    color: #D4CEC0;
     white-space: pre-wrap;
 }
 
 .kbd {
     font-family: 'JetBrains Mono', monospace;
     font-size: 0.7rem;
-    background: #F2F0E9;
-    border: 1px solid #E5E2D9;
+    background: #171C1C;
+    border: 1px solid #3A4142;
     border-bottom-width: 2px;
     border-radius: 4px;
     padding: 0.1rem 0.4rem;
-    color: #2D2C28;
+    color: #D4CEC0;
 }
 
 /* sidebar nav item */
@@ -256,22 +256,23 @@
     display: flex; align-items: center; gap: 0.6rem;
     padding: 0.55rem 0.75rem;
     border-radius: 6px;
-    color: #65635C;
+    color: #A8A196;
     transition: background 180ms ease-out, color 180ms ease-out;
 }
-.nav-item:hover { background: #F2F0E9; color: #2D2C28; }
-.nav-item.active { background: #2D2C28; color: #FAF9F6; }
+.nav-item:hover { background: #1E2423; color: #D4CEC0; }
+.nav-item.active { background: #D26D53; color: #fff; }
 
 
 /* premium */
 .input-premium {
   width: 100%;
   border-radius: 1rem;
-  border: 1px solid #E5E2D9;
-  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid #3A4142;
+  background: rgba(23, 28, 28, 0.82);
   padding: 0.75rem 1rem;
   font-size: 0.875rem;
   outline: none;
+  color: #D4CEC0;
   transition: all 0.2s ease;
 }
 
@@ -298,4 +299,124 @@
   .checkout-embed-compact {
     min-height: 500px;
   }
+}
+
+/* App-wide nocturne compatibility layer.
+   Many screens use Tailwind arbitrary color tokens directly; these exact-token
+   overrides let the whole app share the Firefox-inspired dark visual system. */
+html,
+body,
+#root {
+  background: #15140E;
+  color: #D4CEC0;
+}
+
+[class~="bg-[#FAF9F6]"],
+[class~="bg-[#F2F0E9]"],
+[class~="bg-[#ECEAE1]"],
+[class~="bg-white"],
+[class~="bg-white/60"],
+[class~="bg-white/70"] {
+  background-color: #171C1C !important;
+}
+
+[class~="bg-[#FFF4EE]"],
+[class~="bg-[#FFF7F2]"],
+[class~="bg-[#FEF0EE]"],
+[class~="bg-[#FCF1EC]"],
+[class~="bg-[#FCE7E0]"] {
+  background-color: #351406 !important;
+}
+
+[class~="bg-[#FFFBEB]"],
+[class~="bg-[#FEF6E4]"],
+[class~="bg-[#F8E5BC]"] {
+  background-color: #2B210D !important;
+}
+
+[class~="bg-[#E6EAD8]"],
+[class~="bg-[#E8F5EA]"],
+[class~="bg-[#F2F5EF]"],
+[class~="bg-[#E7EBDD]"],
+[class~="bg-[#D8E0CD]"] {
+  background-color: #1E2B18 !important;
+}
+
+[class~="bg-[#EDF5FF]"],
+[class~="bg-[#E3E6DC]"] {
+  background-color: #17242D !important;
+}
+
+[class~="bg-[#2D2C28]"],
+[class~="bg-[#3F3E39]"] {
+  background-color: #1E2423 !important;
+}
+
+[class~="text-[#2D2C28]"],
+[class~="text-[#3F3D38]"],
+[class~="text-[#FAF9F6]"] {
+  color: #D4CEC0 !important;
+}
+
+[class~="text-[#65635C]"],
+[class~="text-[#8A887F]"],
+[class~="text-[#FAF9F6]/55"],
+[class~="text-white/70"],
+[class~="text-white/80"] {
+  color: #A8A196 !important;
+}
+
+[class~="text-[#D26D53]"],
+[class~="text-[#8C2D14]"] {
+  color: #EE856C !important;
+}
+
+[class~="text-[#556045]"],
+[class~="text-[#3D4A2C]"],
+[class~="text-[#2B6A39]"] {
+  color: #BFD4A2 !important;
+}
+
+[class~="text-[#245EA8]"] {
+  color: #86C7F7 !important;
+}
+
+[class~="text-[#E6AE2E]"],
+[class~="text-[#6F4B12]"],
+[class~="text-[#8A5A24]"] {
+  color: #F2C95B !important;
+}
+
+[class~="border-[#E5E2D9]"],
+[class~="border-[#DBD8CC]"],
+[class~="border-[#3D3C38]"] {
+  border-color: #3A4142 !important;
+}
+
+[class~="border-[#F2C5B7]"],
+[class~="border-[#F5C3B3]"],
+[class~="border-[#D26D53]/35"],
+[class~="border-[#D26D53]/25"],
+[class~="border-[#D26D53]/20"] {
+  border-color: #78301F !important;
+}
+
+[class~="border-[#C9D2B2]"],
+[class~="border-[#B7C3A4]"],
+[class~="border-[#556045]/30"],
+[class~="border-[#C8E8D4]"] {
+  border-color: #4D6840 !important;
+}
+
+input,
+textarea,
+select {
+  color: #D4CEC0;
+  background-color: #171C1C;
+  border-color: #3A4142;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #8F887D;
 }
