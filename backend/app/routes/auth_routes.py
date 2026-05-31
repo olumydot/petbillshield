@@ -479,6 +479,16 @@ async def google_callback(request: Request):
         )
 
     if token_response.status_code != 200:
+        try:
+            error_payload = token_response.json()
+        except Exception:
+            error_payload = {"raw": token_response.text[:500]}
+        logger.warning(
+            "Google token exchange failed status=%s error=%s description=%s",
+            token_response.status_code,
+            error_payload.get("error"),
+            error_payload.get("error_description") or error_payload.get("raw"),
+        )
         raise HTTPException(status_code=401, detail="Failed to verify Google login")
 
     tokens = token_response.json()
