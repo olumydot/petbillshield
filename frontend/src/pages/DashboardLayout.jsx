@@ -427,7 +427,7 @@ export default function DashboardLayout() {
             <button
               type="button"
               onClick={() => setMobileNavOpen(true)}
-              className="lg:hidden inline-flex items-center gap-2 rounded-xl border border-[#E5E2D9] bg-[#FAF9F6] px-3 py-2 text-sm font-semibold text-[#2D2C28] shadow-sm"
+              className="lg:hidden inline-flex items-center gap-2 rounded-xl border border-[#3A4142] bg-[#1D2222] px-3 py-2 text-sm font-semibold text-[#EFE8DA] shadow-sm"
               aria-label="Open dashboard menu"
               aria-expanded={mobileNavOpen}
               data-testid="mobile-dashboard-menu-btn"
@@ -524,23 +524,41 @@ export default function DashboardLayout() {
       {mobileNavOpen && (
         <div className="fixed inset-0 z-[85] lg:hidden" role="dialog" aria-modal="true" aria-label="Dashboard menu">
           <div className="absolute inset-0 bg-[#2D2C28]/55 backdrop-blur-sm" onClick={() => setMobileNavOpen(false)} />
-          <aside className="absolute left-0 top-0 h-full w-[min(88vw,360px)] overflow-y-auto bg-[#FAF9F6] shadow-2xl">
-            <div className="sticky top-0 z-10 border-b border-[#E5E2D9] bg-[#FAF9F6]/95 px-4 py-4 backdrop-blur">
+          <aside className="absolute left-0 top-0 h-full w-[min(88vw,360px)] overflow-y-auto border-r border-[#3A4142] bg-[#161B1B] text-[#D4CEC0] shadow-2xl">
+            <div className="sticky top-0 z-10 border-b border-[#3A4142] bg-[#161B1B]/95 px-4 py-4 backdrop-blur">
               <div className="flex items-center justify-between gap-3">
                 <PetVaultWordmark iconSize={30} />
                 <button
                   type="button"
                   onClick={() => setMobileNavOpen(false)}
-                  className="rounded-full p-2 text-[#65635C] hover:bg-[#F2F0E9] hover:text-[#2D2C28]"
+                  className="rounded-full p-2 text-[#A8A196] hover:bg-[#202625] hover:text-[#EFE8DA]"
                   aria-label="Close dashboard menu"
                 >
                   <X size={18} />
                 </button>
               </div>
+              <div className="mt-4 rounded-[22px] border border-[#3A4142] bg-[#202625] p-3.5">
+                <div className="flex items-center gap-3">
+                  <ProfilePictureButton user={user} refresh={refresh} />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-[#EFE8DA] truncate">{user?.name || "Pet parent"}</p>
+                    <p className="text-xs text-[#A8A196] truncate">{user?.email}</p>
+                  </div>
+                  <Link
+                    to="/dashboard/settings"
+                    onClick={() => setMobileNavOpen(false)}
+                    className="shrink-0 inline-flex items-center justify-center w-9 h-9 rounded-xl border border-[#3A4142] bg-[#171C1C] text-[#EFE8DA]"
+                    aria-label="Open account settings"
+                  >
+                    <Settings size={17} />
+                  </Link>
+                </div>
+              </div>
               <div className="mt-3 flex items-center justify-between gap-3">
                 <Link
                   to="/dashboard/pricing"
                   className={`chip ${billing?.active ? "chip-wait" : "chip-warning"} hover:opacity-90`}
+                  onClick={() => setMobileNavOpen(false)}
                 >
                   <Sparkles size={11} />
                   {billingLoading ? "Checking plan" : tier.shortLabel}
@@ -555,12 +573,13 @@ export default function DashboardLayout() {
                   key={n.to}
                   to={n.to}
                   end={n.end}
+                  onClick={() => setMobileNavOpen(false)}
                   data-testid={`mobile-${n.testid}`}
                   className={({ isActive }) =>
                     `flex items-center gap-3 rounded-2xl px-3 py-3 text-sm transition-colors ${
                       isActive
                         ? "bg-[#2D2C28] text-[#FAF9F6] font-semibold"
-                        : "text-[#65635C] hover:bg-[#F2F0E9] hover:text-[#2D2C28]"
+                        : "text-[#C7C0B2] hover:bg-[#202625] hover:text-[#EFE8DA]"
                     }`
                   }
                 >
@@ -570,7 +589,7 @@ export default function DashboardLayout() {
                         className={`w-9 h-9 rounded-xl inline-flex items-center justify-center shrink-0 ${
                           isActive
                             ? "bg-white/15 text-[#FAF9F6]"
-                            : "bg-[#F2F0E9] text-[#8A887F]"
+                            : "bg-[#171C1C] text-[#A8A196]"
                         }`}
                       >
                         <n.icon size={16} strokeWidth={1.75} />
@@ -585,10 +604,13 @@ export default function DashboardLayout() {
               ))}
             </nav>
 
-            <div className="border-t border-[#E5E2D9] px-4 py-4">
+            <div className="border-t border-[#3A4142] px-4 py-4">
               <button
-                onClick={logout}
-                className="w-full rounded-2xl border border-[#E5E2D9] bg-white px-4 py-3 text-sm font-semibold text-[#2D2C28] inline-flex items-center justify-center gap-2"
+                onClick={() => {
+                  setMobileNavOpen(false);
+                  logout();
+                }}
+                className="w-full rounded-2xl border border-[#3A4142] bg-[#1D2222] px-4 py-3 text-sm font-semibold text-[#EFE8DA] inline-flex items-center justify-center gap-2"
               >
                 <LogOut size={15} />
                 {t("common.sign_out")}
