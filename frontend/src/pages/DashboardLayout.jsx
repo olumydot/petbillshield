@@ -687,17 +687,7 @@ export default function DashboardLayout() {
               ))}
             </nav>
 
-            {!sidebarCollapsed && !billingLoading && <div
-              className={`rounded-[22px] overflow-hidden border ${
-                tier.tone === "rescue"
-                  ? "border-[#D26D53]/30 bg-gradient-to-br from-[#2D2C28] to-[#3F3E39] text-[#FAF9F6]"
-                  : tier.tone === "family"
-                  ? "border-[#B7C3A4] bg-gradient-to-br from-[#E7EBDD] to-[#D8E0CD]"
-                  : tier.tone === "vault"
-                  ? "border-[#D26D53]/20 bg-gradient-to-br from-[#FFF7F2] to-[#FAF9F6]"
-                  : "border-[#E5E2D9] bg-[#FAF9F6]"
-              }`}
-            >
+            {!sidebarCollapsed && !billingLoading && <div className="pbs-dark-card rounded-[22px] overflow-hidden">
               <div className="p-4 space-y-3">
 
                 {/* ── Plan name + icon ── */}
@@ -706,7 +696,7 @@ export default function DashboardLayout() {
                     <div className={`eyebrow mb-1 ${tier.tone === "rescue" ? "text-[#E6AE2E]" : "text-[#D26D53]"}`}>
                       Current plan
                     </div>
-                    <p className={`font-semibold text-sm truncate ${tier.tone === "rescue" ? "text-[#FAF9F6]" : "text-[#2D2C28]"}`}>
+                    <p className="font-semibold text-sm truncate text-[#EFE8DA]">
                       {tier.label}
                     </p>
 
@@ -719,17 +709,12 @@ export default function DashboardLayout() {
                       const soon     = !isCancelling && daysLeft > 7 && daysLeft <= 30;
                       return (
                         <div className="mt-0.5 space-y-0.5">
-                          <p className={`text-xs ${
-                            isCancelling
-                              ? tier.tone === "rescue" ? "text-[#E6AE2E]" : "text-[#8A5A24]"
-                              : urgent ? "text-[#D26D53] font-semibold"
-                              : tier.tone === "rescue" ? "text-[#FAF9F6]/55" : "text-[#65635C]"
-                          }`}>
+                          <p className={`text-xs ${isCancelling || urgent || soon ? "text-[#F2C95B] font-semibold" : "text-[#B9B1A3]"}`}>
                             {isCancelling ? "Ends" : "Renews"}{" "}
                             {expDt.toLocaleDateString()}
                           </p>
                           {!isCancelling && daysLeft <= 30 && (
-                            <p className={`text-[11px] font-semibold ${urgent ? "text-[#D26D53]" : soon ? "text-[#8A5A24]" : "text-[#65635C]"}`}>
+                            <p className={`text-[11px] font-semibold ${urgent ? "text-[#F6A28C]" : "text-[#F2C95B]"}`}>
                               {daysLeft === 0 ? "Renews today"
                                : daysLeft === 1 ? "Renews tomorrow"
                                : `${daysLeft} days until renewal`}
@@ -738,7 +723,7 @@ export default function DashboardLayout() {
                         </div>
                       );
                     })() : (
-                      <p className={`text-xs mt-0.5 ${tier.tone === "rescue" ? "text-[#FAF9F6]/55" : "text-[#65635C]"}`}>
+                      <p className="text-xs mt-0.5 text-[#B9B1A3]">
                         {tier.canUsePremium ? "All premium features unlocked." : "Upgrade for premium tools."}
                       </p>
                     )}

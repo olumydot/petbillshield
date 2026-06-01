@@ -146,10 +146,10 @@ export default function Landing() {
                 />
                 {/* Floating badge */}
                 <div className="absolute bottom-4 left-4 right-4 flex items-end justify-between">
-                  <div className="bg-white/90 backdrop-blur-md rounded-2xl px-4 py-3 border border-white/50 shadow-lg">
-                    <div className="text-[10px] uppercase tracking-widest text-[#8A887F] font-medium">Avg. savings identified</div>
-                    <div className="font-serif-display text-3xl text-[#2D2C28] leading-tight">$340</div>
-                    <div className="text-[10px] text-[#8A887F] mt-0.5">per estimate reviewed *</div>
+                  <div className="pbs-dark-card backdrop-blur-md rounded-2xl px-4 py-3 shadow-lg">
+                    <div className="pbs-card-accent text-[10px] uppercase tracking-widest font-semibold">Avg. savings identified</div>
+                    <div className="pbs-card-value font-serif-display text-3xl leading-tight">$340</div>
+                    <div className="text-[10px] mt-0.5">per estimate reviewed *</div>
                   </div>
                   <div className="bg-[#2D2C28]/90 backdrop-blur-md rounded-2xl p-3.5 border border-white/10 shadow-lg">
                     <ShieldCheck size={22} className="text-[#E4A834]" />
@@ -158,16 +158,16 @@ export default function Landing() {
               </div>
 
               {/* Mini cards */}
-              <div className="col-span-3 rounded-[20px] bg-[#F8F5EE] border border-[#E5E2D9] p-5">
-                <div className="text-[10px] uppercase tracking-widest text-[#8A887F] font-medium">Plain-English breakdown</div>
+              <div className="col-span-3 rounded-[20px] pbs-dark-card p-5">
+                <div className="pbs-card-accent text-[10px] uppercase tracking-widest font-semibold">Plain-English breakdown</div>
                 <div className="mt-2 space-y-1.5">
                   {[
-                    { label: "CBC bloodwork", tag: "Urgent",   color: "bg-[#FFF4EE] text-[#D26D53]" },
-                    { label: "Dental cleaning", tag: "Can wait", color: "bg-[#E8F5EC] text-[#2F6B45]" },
-                    { label: "Anesthesia",     tag: "Urgent",   color: "bg-[#FFF4EE] text-[#D26D53]" },
+                    { label: "CBC bloodwork", tag: "Urgent",   color: "pbs-chip-terracotta" },
+                    { label: "Dental cleaning", tag: "Can wait", color: "pbs-chip-sage" },
+                    { label: "Anesthesia",     tag: "Urgent",   color: "pbs-chip-terracotta" },
                   ].map(({ label, tag, color }) => (
                     <div key={label} className="flex items-center justify-between gap-2">
-                      <span className="text-xs text-[#2D2C28] font-medium">{label}</span>
+                      <span className="pbs-card-value text-xs font-semibold">{label}</span>
                       <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${color}`}>{tag}</span>
                     </div>
                   ))}
@@ -831,10 +831,10 @@ export default function Landing() {
 // ── Feature card ──────────────────────────────────────────────────────────────
 function FeatureCard({ className, bg, dark, icon: Icon, kicker, title, body, chips, image }) {
   return (
-    <div className={`rounded-[24px] p-7 sm:p-8 flex flex-col ${bg || "bg-[#F2F0E9]"} ${className || ""}`}>
+    <div className={`pbs-feature-card rounded-[24px] p-7 sm:p-8 flex flex-col ${bg || "bg-[#F2F0E9]"} ${className || ""}`}>
       <div className="flex items-start justify-between gap-3 mb-5">
         <span className={`eyebrow ${dark ? "text-[#E4A834]" : "text-[#D26D53]"}`}>{kicker}</span>
-        <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${dark ? "bg-white/10 text-white" : "bg-white/80 text-[#2D2C28]"}`}>
+        <div className={`pbs-feature-icon w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${dark ? "bg-white/10 text-white" : "bg-white/80 text-[#2D2C28]"}`}>
           <Icon size={17} />
         </div>
       </div>

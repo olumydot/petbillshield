@@ -342,7 +342,7 @@ export default function Pets() {
         </section>
       )}
 
-      <section className="rounded-[28px] border border-[#E5E2D9] bg-[#FAF9F6] p-6">
+      <section className="pbs-dark-card rounded-[28px] p-6">
         <div className="flex items-start gap-4">
           <div className="w-11 h-11 rounded-2xl bg-[#556045] text-white inline-flex items-center justify-center shrink-0">
             <ShieldCheck size={18} />
@@ -353,7 +353,7 @@ export default function Pets() {
               Your records stay safe.
             </h3>
 
-            <p className="text-sm text-[#65635C] mt-1 leading-relaxed max-w-3xl">
+            <p className="text-sm mt-1 leading-relaxed max-w-3xl">
               Downgrading only changes which pets are active. Saved profiles,
               invoices, vaccines, medications, and notes remain preserved.
             </p>
