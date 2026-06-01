@@ -41,25 +41,30 @@ export default function ProfilePictureButton({ user, refresh }) {
   };
 
   return (
-    <div className="relative group">
+    <div className="relative group h-10 w-10 shrink-0">
       <button
+        type="button"
         onClick={() => inputRef.current?.click()}
-        className="relative"
+        disabled={uploading}
+        className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-[#3A4142] bg-[#1D2222] shadow-[0_10px_24px_-18px_rgba(0,0,0,0.9)] ring-2 ring-[#D26D53]/20 transition hover:ring-[#D26D53]/45 disabled:cursor-wait"
+        aria-label="Change profile picture"
       >
         {pictureSrc ? (
           <img
             src={pictureSrc}
             alt={user?.name || "Profile"}
             referrerPolicy="no-referrer"
-            className="w-10 h-10 rounded-full object-cover border border-[#E5E2D9]"
+            className="absolute inset-0 h-full w-full rounded-full object-cover"
           />
         ) : (
-          <div className="w-10 h-10 rounded-full bg-[#F2F0E9]" />
+          <span className="text-sm font-semibold text-[#EFE8DA]">
+            {(user?.name || user?.email || "U").charAt(0).toUpperCase()}
+          </span>
         )}
 
-        <div className="absolute inset-0 bg-black/50 rounded-full opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white text-[10px]">
+        <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/55 text-[10px] font-semibold text-white opacity-0 transition group-hover:opacity-100">
           {uploading ? "..." : "Edit"}
-        </div>
+        </span>
       </button>
 
       <input
