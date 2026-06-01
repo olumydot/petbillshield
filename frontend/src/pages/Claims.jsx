@@ -559,7 +559,7 @@ export default function Claims() {
                   <div className="flex flex-wrap gap-2">
                     {["70", "80", "90", "100"].map((r) => (
                       <button key={r} type="button" onClick={() => setReimbursementRatePct(r)}
-                        className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${reimbursementRatePct === r ? "bg-[#E6AE2E] text-white" : "border border-[#E5E2D9] bg-white text-[#65635C] hover:border-[#E6AE2E]/50"}`}>
+                        className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${reimbursementRatePct === r ? "bg-[#E6AE2E] text-[#2D2C28]" : "border border-[#E5E2D9] bg-white text-[#65635C] hover:border-[#E6AE2E]/50"}`}>
                         {r}%
                       </button>
                     ))}
@@ -739,7 +739,7 @@ export default function Claims() {
               {result.deductible_note && (
                 <div className="rounded-[24px] border border-[#E6AE2E]/40 bg-[#FFFBEB] p-5">
                   <div className="flex items-start gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-[#E6AE2E] text-white flex items-center justify-center shrink-0">
+                    <div className="w-9 h-9 rounded-xl bg-[#E6AE2E] text-[#2D2C28] flex items-center justify-center shrink-0">
                       <DollarSign size={16} />
                     </div>
                     <div className="flex-1">
@@ -929,7 +929,7 @@ function DecisionBanner({ outcome, result, actualReimbursement }) {
     <div className={`rounded-[28px] border p-6 ${outcome.color}`}>
       <div className="flex items-start gap-4">
         <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${
-          isApproved ? "bg-[#556045] text-white" : isDenied ? "bg-[#D26D53] text-white" : "bg-[#E6AE2E] text-white"
+          isApproved ? "bg-[#556045] text-white" : isDenied ? "bg-[#D26D53] text-white" : "bg-[#E6AE2E] text-[#2D2C28]"
         }`}>
           <Icon size={22} />
         </div>

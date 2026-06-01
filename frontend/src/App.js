@@ -1,6 +1,6 @@
 import "@/App.css";
 import { lazy, Suspense } from "react";
-import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useLocation, Navigate } from "react-router-dom";
 import { Toaster } from "sonner";
 
 import { AuthProvider } from "@/context/AuthContext";
@@ -20,7 +20,6 @@ const Scripts = lazy(() => import("@/pages/Scripts"));
 const PricingPage = lazy(() => import("@/pages/PricingPage"));
 const Reminders = lazy(() => import("@/pages/Reminders"));
 const Compare = lazy(() => import("@/pages/Compare"));
-const Admin = lazy(() => import("@/pages/Admin"));
 const SharedAnalysis = lazy(() => import("@/pages/SharedAnalysis"));
 const Contact = lazy(() => import("@/pages/Contact"));
 const AuthPage = lazy(() => import("@/pages/AuthPage"));
@@ -83,8 +82,10 @@ function AppRouter() {
         <Route path="/dashboard/checkout" element={<CheckoutPage />} />
         <Route path="settings" element={<ProfileSettings />} />
         <Route path="change-password" element={<ChangePasswordPage />} />
-        <Route path="admin" element={<Admin />} />
+        <Route path="admin" element={<Navigate to="/admin-portal" replace />} />
       </Route>
+      <Route path="/admin" element={<AdminPortal />} />
+      <Route path="/admin-panel" element={<AdminPortal />} />
       <Route path="/admin-portal" element={<AdminPortal />} />
       <Route path="*" element={<Landing />} />
     </Routes>

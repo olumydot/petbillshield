@@ -999,7 +999,7 @@ function BillingRulesCard({ isSubscribed, currentTier }) {
     {
       scenario: "Downgrade mid-cycle",
       icon: ArrowDown,
-      color: "bg-[#E6AE2E] text-white",
+      color: "bg-[#E6AE2E] text-[#2D2C28]",
       dot: "bg-[#E6AE2E]",
       detail: "Your current plan stays active until the end of the billing period. The new (lower) plan takes effect at renewal. No refund for unused time.",
     },

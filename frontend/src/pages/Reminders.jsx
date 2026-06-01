@@ -686,7 +686,7 @@ function ReminderCard({ r, tone, pets, onEdit, onDelete }) {
             isOverdue
               ? "bg-[#D26D53] text-white"
               : isToday
-              ? "bg-[#E6AE2E] text-white"
+              ? "bg-[#E6AE2E] text-[#2D2C28]"
               : isDone
               ? "bg-[#F2F0E9] text-[#8A887F]"
               : "bg-[#F2E5DE] text-[#D26D53]"
