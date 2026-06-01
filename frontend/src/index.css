@@ -378,12 +378,25 @@ body,
   color: #D4CEC0;
 }
 
+/* App.css sets a light-theme base (.App { background:#FAF9F6; color:#2D2C28 }).
+   Override it here so unstyled text inherits the dark-theme ivory instead of
+   dark charcoal — otherwise headings without an explicit colour render
+   dark-on-dark and disappear. */
+.App {
+  background-color: #15140E !important;
+  color: #D4CEC0 !important;
+}
+
 [class~="bg-[#FAF9F6]"],
 [class~="bg-[#F2F0E9]"],
 [class~="bg-[#ECEAE1]"],
+[class~="bg-[#F5F2EB]"],
+[class~="bg-[#F8F5EE]"],
+[class~="bg-[#E8E5DD]"],
 [class~="bg-white"],
 [class~="bg-white/60"],
-[class~="bg-white/70"] {
+[class~="bg-white/70"],
+[class~="bg-white/80"] {
   background-color: #171C1C !important;
 }
 
@@ -391,7 +404,8 @@ body,
 [class~="bg-[#FFF7F2]"],
 [class~="bg-[#FEF0EE]"],
 [class~="bg-[#FCF1EC]"],
-[class~="bg-[#FCE7E0]"] {
+[class~="bg-[#FCE7E0]"],
+[class~="bg-[#FFF4E6]"] {
   background-color: #351406 !important;
 }
 
@@ -403,6 +417,7 @@ body,
 
 [class~="bg-[#E6EAD8]"],
 [class~="bg-[#E8F5EA]"],
+[class~="bg-[#E8F5EC]"],
 [class~="bg-[#F2F5EF]"],
 [class~="bg-[#E7EBDD]"],
 [class~="bg-[#D8E0CD]"] {
