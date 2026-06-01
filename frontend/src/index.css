@@ -19,8 +19,8 @@
 
         --muted: 48 15% 16%;
         --muted-foreground: 38 8% 62%;
-        --accent: 73 11% 64%;            /* #A2AA92 sage light */
-        --accent-foreground: 38 13% 78%;
+        --accent: 180 7% 16%;            /* dark interactive hover surface */
+        --accent-foreground: 38 20% 90%;
 
         --destructive: 0 65% 50%;
         --destructive-foreground: 0 0% 98%;
@@ -594,4 +594,127 @@ textarea::placeholder {
 [class~="bg-[#F5D993]"] [class*="text-"],
 [class~="bg-[#C8E8D4]"] [class*="text-"] {
   color: #17140D !important;
+}
+
+/* Hover-state compatibility layer.
+   Many interactive surfaces still carry old light-theme hover utilities.
+   Keep those states inside the nocturne system so text does not disappear
+   when a card or menu item is hovered. */
+[class~="hover:bg-white"]:hover,
+[class~="hover:bg-white/10"]:hover,
+[class~="hover:bg-white/15"]:hover,
+[class~="hover:bg-white/20"]:hover,
+[class~="hover:bg-white/30"]:hover,
+[class~="hover:bg-white/80"]:hover,
+[class~="hover:bg-white/90"]:hover,
+[class~="hover:bg-[#FAF9F6]"]:hover,
+[class~="hover:bg-[#F2F0E9]"]:hover,
+[class~="hover:bg-[#E5E2D9]"]:hover,
+[class~="hover:bg-[#F5F2EB]"]:hover,
+[class~="hover:bg-[#FAFAF8]"]:hover {
+  background-color: #202625 !important;
+  color: #EFE8DA !important;
+}
+
+[class~="hover:bg-[#FFF4EE]"]:hover,
+[class~="hover:bg-[#FFF7F2]"]:hover,
+[class~="hover:bg-[#FEF0EE]"]:hover,
+[class~="hover:bg-[#FFF9F7]"]:hover {
+  background-color: #3A160B !important;
+  color: #F6B19D !important;
+}
+
+[class~="hover:bg-[#FEF6E4]"]:hover,
+[class~="hover:bg-[#FFF8EE]"]:hover,
+[class~="hover:bg-[#FCE8C8]"]:hover {
+  background-color: #35290F !important;
+  color: #F3D98A !important;
+}
+
+[class~="hover:bg-[#E8F5EA]"]:hover,
+[class~="hover:bg-[#E8F5EC]"]:hover,
+[class~="hover:bg-[#EEF5EA]"]:hover,
+[class~="hover:bg-[#C8E8D4]"]:hover {
+  background-color: #1F3220 !important;
+  color: #CDE7BE !important;
+}
+
+[class~="hover:bg-accent"]:hover,
+[class~="focus:bg-accent"]:focus,
+[class~="data-[state=open]:bg-accent"][data-state="open"],
+[class~="data-[selected=true]:bg-accent"][data-selected="true"],
+[class~="aria-selected:bg-accent"][aria-selected="true"] {
+  background-color: hsl(var(--accent)) !important;
+  color: hsl(var(--accent-foreground)) !important;
+}
+
+[class~="hover:text-[#2D2C28]"]:hover,
+[class~="hover:text-[#3F3D38]"]:hover,
+[class~="hover:text-[#FAF9F6]"]:hover,
+[class~="hover:text-white"]:hover,
+[class~="hover:text-white/65"]:hover,
+[class~="hover:text-white/80"]:hover,
+[class~="hover:text-foreground"]:hover,
+[class~="focus:text-accent-foreground"]:focus,
+[class~="hover:text-accent-foreground"]:hover,
+[class~="data-[state=open]:text-accent-foreground"][data-state="open"],
+[class~="data-[selected=true]:text-accent-foreground"][data-selected="true"],
+[class~="aria-selected:text-accent-foreground"][aria-selected="true"] {
+  color: #EFE8DA !important;
+}
+
+[class~="hover:text-[#65635C]"]:hover,
+[class~="hover:text-[#8A887F]"]:hover,
+[class~="hover:text-muted-foreground"]:hover {
+  color: #B9B1A3 !important;
+}
+
+[class~="hover:text-[#D26D53]"]:hover,
+[class~="hover:text-[#8C2D14]"]:hover,
+[class~="hover:text-[#F87171]"]:hover {
+  color: #EE856C !important;
+}
+
+[class~="hover:text-[#556045]"]:hover,
+[class~="hover:text-[#3D4A2C]"]:hover,
+[class~="hover:text-[#2B6A39]"]:hover {
+  color: #BFD4A2 !important;
+}
+
+[class~="hover:text-[#245EA8]"]:hover {
+  color: #86C7F7 !important;
+}
+
+[class~="hover:border-[#E5E2D9]"]:hover,
+[class~="hover:border-[#C5C2BB]"]:hover,
+[class~="hover:border-[#65635C]"]:hover {
+  border-color: #4A5454 !important;
+}
+
+[class~="hover:border-[#D26D53]"]:hover,
+[class~="hover:border-[#D26D53]/40"]:hover,
+[class~="hover:border-[#D26D53]/50"]:hover,
+[class~="hover:border-[#D26D53]/60"]:hover,
+[class~="hover:border-[#D26D53]/70"]:hover {
+  border-color: #A24831 !important;
+}
+
+[class~="hover:border-[#E6AE2E]/50"]:hover,
+[class~="hover:border-[#F5D993]"]:hover {
+  border-color: #9A7420 !important;
+}
+
+[class~="hover:border-[#556045]"]:hover,
+[class~="hover:border-[#C9D9BE]"]:hover {
+  border-color: #5C764C !important;
+}
+
+.group:hover [class~="group-hover:text-[#8A887F]"],
+.group:hover [class~="group-hover:text-[#FAF9F6]"],
+.group:hover [class~="group-hover:text-foreground"] {
+  color: #EFE8DA !important;
+}
+
+.group:hover [class~="group-hover:text-[#D26D53]"] {
+  color: #EE856C !important;
 }
