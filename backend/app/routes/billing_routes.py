@@ -142,19 +142,11 @@ async def billing_create_checkout(
             detail=f"Stripe price ID is missing for {payload.plan_id}",
         )
 
-    # ── Guard: active subscriber must use /billing/switch, not a new checkout ──
+    # ── Guard: do not create duplicate or conflicting subscriptions ──
     caller_doc = await db.users.find_one({"user_id": user.user_id}, {"_id": 0}) or {}
-    if (
-        caller_doc.get("stripe_subscription_id")
-        and caller_doc.get("subscription_status") == "active"
-    ):
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "You already have an active subscription. "
-                "Use POST /billing/switch to change your plan mid-cycle."
-            ),
-        )
+    conflict_detail = _subscription_creation_conflict_detail(caller_doc)
+    if conflict_detail:
+        raise HTTPException(status_code=409, detail=conflict_detail)
 
     origin = payload.origin_url.rstrip("/")
     success_url = f"{origin}/dashboard/pricing?session_id={{CHECKOUT_SESSION_ID}}&plan={payload.plan_id}"
@@ -292,16 +284,11 @@ async def billing_create_subscription(
             detail=f"Stripe price ID missing for plan '{payload.plan_id}'",
         )
 
-    # Guard: active subscriber must use /billing/switch, not a new checkout
+    # Guard: do not create duplicate or conflicting subscriptions
     caller_doc = await db.users.find_one({"user_id": user.user_id}, {"_id": 0}) or {}
-    if (
-        caller_doc.get("stripe_subscription_id")
-        and caller_doc.get("subscription_status") == "active"
-    ):
-        raise HTTPException(
-            status_code=409,
-            detail="You already have an active subscription. Use /billing/switch to change plans.",
-        )
+    conflict_detail = _subscription_creation_conflict_detail(caller_doc)
+    if conflict_detail:
+        raise HTTPException(status_code=409, detail=conflict_detail)
 
     stripe_sdk.api_key = STRIPE_API_KEY
     stripe_sdk.api_base = "https://api.stripe.com"
@@ -438,10 +425,10 @@ async def billing_confirm_payment(
     pi_status = stripe_value(pi, "status", "")
     pi_customer = stripe_value(pi, "customer", None)
 
-    if pi_status not in ("succeeded", "processing"):
+    if pi_status != "succeeded":
         raise HTTPException(
             status_code=400,
-            detail=f"Payment is not complete (status: {pi_status}). Please try again.",
+            detail=f"Payment is not complete yet (status: {pi_status}). Please try again in a moment.",
         )
 
     # ── 2. Ensure the PaymentIntent belongs to this user's customer ──────────
@@ -453,6 +440,14 @@ async def billing_confirm_payment(
             f"(stored={stored_customer_id}, pi={pi_customer})"
         )
         raise HTTPException(status_code=403, detail="Payment does not belong to this account.")
+
+    stored_subscription_id = user_doc.get("stripe_subscription_id")
+    if stored_subscription_id and stored_subscription_id != payload.subscription_id:
+        logger.warning(
+            f"confirm-payment: subscription mismatch for user {user.user_id} "
+            f"(stored={stored_subscription_id}, payload={payload.subscription_id})"
+        )
+        raise HTTPException(status_code=403, detail="Subscription does not belong to this account.")
 
     # ── 3. Resolve the plan ──────────────────────────────────────────────────
     plan_id = user_doc.get("pending_plan_id") or user_doc.get("plan_id")
@@ -733,6 +728,53 @@ def _pending_downgrade_is_due(user_doc: dict, now: Optional[datetime] = None) ->
         return False
 
     return due_at <= (now or datetime.now(timezone.utc))
+
+
+_BLOCKING_SUBSCRIPTION_STATUSES = {
+    "active",
+    "trialing",
+    "past_due",
+    "unpaid",
+    "incomplete",
+}
+
+
+def _subscription_creation_conflict_detail(doc: dict) -> Optional[str]:
+    """
+    Returns a user-facing blocker message when creating a new subscription
+    would conflict with one already tracked on the account.
+    """
+    if not doc.get("stripe_subscription_id"):
+        return None
+
+    status = (doc.get("subscription_status") or "").strip().lower()
+    if status not in _BLOCKING_SUBSCRIPTION_STATUSES:
+        return None
+
+    if status in {"active", "trialing"}:
+        return (
+            "You already have an active subscription. "
+            "Use POST /billing/switch to change your plan mid-cycle."
+        )
+    if status == "incomplete":
+        return (
+            "You already have a subscription checkout in progress. "
+            "Please finish that payment before starting a new one."
+        )
+    return (
+        "Your subscription needs payment attention before you start a new one. "
+        "Please update your billing method or retry the existing invoice first."
+    )
+
+
+def _should_send_renewal_success_email(invoice_obj: dict, old_expires: Optional[str]) -> bool:
+    """
+    Renewal emails are only for actual cycle renewals.
+    Stripe also emits invoice.paid for first-time subscriptions and for
+    mid-cycle subscription updates with proration.
+    """
+    billing_reason = (invoice_obj or {}).get("billing_reason")
+    return bool(old_expires) and billing_reason == "subscription_cycle"
 
 def _fmt_usd(amount) -> str:
     try:
@@ -1157,7 +1199,13 @@ async def stripe_webhook(request: Request):
                         "active": False,
                         "entitlement_expires_at": datetime.now(timezone.utc).isoformat(),
                         "updated_at": datetime.now(timezone.utc).isoformat(),
-                    }
+                    },
+                    "$unset": {
+                        "pending_plan_id": "",
+                        "pending_downgrade_plan_id": "",
+                        "pending_downgrade_plan_label": "",
+                        "pending_downgrade_at": "",
+                    },
                 },
             )
             if deleted_user.get("email"):
@@ -1243,7 +1291,7 @@ async def stripe_webhook(request: Request):
                         stripe_subscription_id=subscription_id,
                     )
                     # Renewal email (skip for the very first invoice — that's the welcome email)
-                    if old_expires:
+                    if _should_send_renewal_success_email(obj, old_expires):
                         refreshed = await db.users.find_one({"user_id": user_doc["user_id"]}, {"_id": 0}) or {}
                         asyncio.create_task(email_renewal_success(
                             email=user_doc.get("email", ""),
@@ -1829,6 +1877,11 @@ async def billing_switch_plan(
                 status_code=400,
                 detail="Your subscription has been cancelled in Stripe. Please subscribe again.",
             )
+        if doc.get("cancel_at_period_end") or stripe_value(sub, "cancel_at_period_end", False):
+            raise HTTPException(
+                status_code=400,
+                detail="Your subscription is scheduled to end. Reactivate it before changing plans.",
+            )
 
         items_obj  = stripe_value(sub, "items", {})
         items_data = stripe_value(items_obj, "data", [])
@@ -2096,11 +2149,18 @@ async def billing_cancel_subscription(user: User = Depends(get_current_user)):
 
     await db.users.update_one(
         {"user_id": user.user_id},
-        {"$set": {
-            "cancel_at_period_end":   True,
-            "entitlement_expires_at": ends_at or doc.get("entitlement_expires_at"),
-            "updated_at":             datetime.now(timezone.utc).isoformat(),
-        }},
+        {
+            "$set": {
+                "cancel_at_period_end":   True,
+                "entitlement_expires_at": ends_at or doc.get("entitlement_expires_at"),
+                "updated_at":             datetime.now(timezone.utc).isoformat(),
+            },
+            "$unset": {
+                "pending_downgrade_plan_id": "",
+                "pending_downgrade_plan_label": "",
+                "pending_downgrade_at": "",
+            },
+        },
     )
 
     await db.plan_switches.insert_one({
