@@ -393,10 +393,31 @@ body,
 [class~="bg-[#F5F2EB]"],
 [class~="bg-[#F8F5EE]"],
 [class~="bg-[#E8E5DD]"],
+[class~="bg-[#D9D6CD]"],
+[class~="bg-[#D9D6CE]"],
+[class~="bg-[#E5E2D9]"],
+[class~="bg-[#E8E4DB]"],
+[class~="bg-[#EAE7E0]"],
+[class~="bg-[#ECE8DF]"],
+[class~="bg-[#EDEAE2]"],
+[class~="bg-[#EDEBE5]"],
+[class~="bg-[#F5F2EC]"],
+[class~="bg-[#F6F1E8]"],
+[class~="bg-[#F8F5EF]"],
+[class~="bg-[#FAF7F1]"],
+[class~="bg-[#FAFAF8]"],
 [class~="bg-white"],
+[class~="bg-white/45"],
+[class~="bg-white/50"],
+[class~="bg-white/55"],
 [class~="bg-white/60"],
+[class~="bg-white/65"],
 [class~="bg-white/70"],
-[class~="bg-white/80"] {
+[class~="bg-white/75"],
+[class~="bg-white/80"],
+[class~="bg-white/85"],
+[class~="bg-white/90"],
+[class~="bg-white/95"] {
   background-color: #171C1C !important;
 }
 
@@ -405,13 +426,21 @@ body,
 [class~="bg-[#FEF0EE]"],
 [class~="bg-[#FCF1EC]"],
 [class~="bg-[#FCE7E0]"],
-[class~="bg-[#FFF4E6]"] {
+[class~="bg-[#FFF4E6]"],
+[class~="bg-[#F2E5DE]"],
+[class~="bg-[#F4DAD3]"],
+[class~="bg-[#F6E7D8]"],
+[class~="bg-[#FFF8EE]"],
+[class~="bg-[#FFF9F7]"],
+[class~="bg-[#FCE8C8]"] {
   background-color: #351406 !important;
 }
 
 [class~="bg-[#FFFBEB]"],
 [class~="bg-[#FEF6E4]"],
-[class~="bg-[#F8E5BC]"] {
+[class~="bg-[#F8E5BC]"],
+[class~="bg-[#FEF9E7]"],
+[class~="bg-[#FFF7E2]"] {
   background-color: #2B210D !important;
 }
 
@@ -420,13 +449,22 @@ body,
 [class~="bg-[#E8F5EC]"],
 [class~="bg-[#F2F5EF]"],
 [class~="bg-[#E7EBDD]"],
-[class~="bg-[#D8E0CD]"] {
+[class~="bg-[#D8E0CD]"],
+[class~="bg-[#EEF2E6]"],
+[class~="bg-[#EEF5EA]"],
+[class~="bg-[#F0FBF4]"] {
   background-color: #1E2B18 !important;
 }
 
 [class~="bg-[#EDF5FF]"],
-[class~="bg-[#E3E6DC]"] {
+[class~="bg-[#E3E6DC]"],
+[class~="bg-[#EDF4FF]"],
+[class~="bg-[#F0F4FF]"] {
   background-color: #17242D !important;
+}
+
+[class~="bg-[#F3ECFF]"] {
+  background-color: #241A30 !important;
 }
 
 [class~="bg-[#2D2C28]"],
@@ -461,6 +499,11 @@ body,
 
 [class~="text-[#245EA8]"] {
   color: #86C7F7 !important;
+}
+
+[class~="text-[#6B3FA0]"],
+[class~="text-[#7B6DAB]"] {
+  color: #C9B8E8 !important;
 }
 
 [class~="text-[#E6AE2E]"],
