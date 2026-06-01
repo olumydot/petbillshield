@@ -711,6 +711,29 @@ def _fmt_date(iso: Optional[str]) -> str:
     except Exception:
         return iso[:10] if iso else "—"
 
+
+def _pending_downgrade_is_due(user_doc: dict, now: Optional[datetime] = None) -> bool:
+    """
+    Returns True only once the scheduled downgrade date has actually arrived.
+
+    Stripe may emit `customer.subscription.updated` immediately after the
+    subscription price is pointed at a lower tier. We intentionally keep the
+    user's current entitlement until period-end, so webhook handlers must not
+    apply the lower access level early.
+    """
+    pending_at = user_doc.get("pending_downgrade_at")
+    if not pending_at:
+        return False
+
+    try:
+        due_at = datetime.fromisoformat(str(pending_at).replace("Z", "+00:00"))
+        if due_at.tzinfo is None:
+            due_at = due_at.replace(tzinfo=timezone.utc)
+    except Exception:
+        return False
+
+    return due_at <= (now or datetime.now(timezone.utc))
+
 def _fmt_usd(amount) -> str:
     try:
         return f"${float(amount):.2f}"
@@ -1273,12 +1296,15 @@ async def stripe_webhook(request: Request):
                     pending_plan = user_doc.get("pending_downgrade_plan_id")
                     current_plan = user_doc.get("plan_id")
 
-                    # If Stripe is now billing at the pending-downgrade price → apply it
+                    # Stripe can surface the lower price before the current
+                    # billing period ends. Only apply the pending downgrade
+                    # when its scheduled effective date has arrived.
                     if (
                         new_plan_id
                         and pending_plan
                         and new_plan_id == pending_plan
                         and new_plan_id != current_plan
+                        and _pending_downgrade_is_due(user_doc)
                     ):
                         await _grant_entitlement(
                             user_id                = user_doc["user_id"],
@@ -1745,7 +1771,7 @@ async def billing_switch_plan(
       the user is billed at the new (lower) price at their next renewal but
       retains their current plan until the billing period ends.
       A pending_downgrade_* triple is stored on the user doc; it is applied
-      by the invoice.paid / customer.subscription.updated webhooks.
+      by the renewal webhook flow once the effective date has actually arrived.
     """
     if not STRIPE_API_KEY:
         raise HTTPException(status_code=500, detail="Stripe is not configured.")
