@@ -145,7 +145,7 @@ export default function Footer() {
 
         {/* Dashboard links */}
         <div className="md:col-span-3">
-          <div className="eyebrow mb-4">Dashboard</div>
+          <div className="eyebrow mb-4 text-[#65635C]">Dashboard</div>
           <ul className="space-y-2.5 text-sm">
             {DASHBOARD_LINKS.map((l) => (
               <li key={l.to}>
@@ -159,7 +159,7 @@ export default function Footer() {
 
         {/* Safety */}
         <div className="md:col-span-3">
-          <div className="eyebrow mb-4">Safety first</div>
+          <div className="eyebrow mb-4 text-[#65635C]">Safety first</div>
           <p className="text-xs text-[#65635C] leading-relaxed">
             PetBill Shield does not diagnose pets, does not replace your veterinarian,
             and never tells you to refuse care. For urgent symptoms, seek immediate

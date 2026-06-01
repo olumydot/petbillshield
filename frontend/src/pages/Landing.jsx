@@ -78,7 +78,7 @@ export default function Landing() {
   );
 
   return (
-    <div className="paper-grain overflow-x-hidden">
+    <div className="paper-grain overflow-x-hidden text-[#2D2C28]">
       {/* Promo banner — only visible when admin enables it */}
       <PromoBanner page="landing" />
 
