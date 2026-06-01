@@ -420,3 +420,53 @@ input::placeholder,
 textarea::placeholder {
   color: #8F887D;
 }
+
+/* Contrast islands for saturated cards/buttons. These keep labels readable
+   when older hard-coded text classes sit inside bright accent surfaces. */
+[class~="bg-[#D26D53]"],
+[class~="bg-[#C05E45]"],
+[class~="bg-[#BD5D44]"],
+[class~="bg-[#BE5D45]"],
+[class~="bg-[#8C2D14]"],
+[class~="bg-[#7A2512]"],
+[class~="bg-[#556045]"],
+[class~="bg-[#465039]"],
+[class~="bg-[#445035]"],
+[class~="bg-[#49533C]"],
+[class~="bg-[#245EA8]"],
+[class~="bg-[#2F6B45]"],
+[class~="bg-[#3D6B9A]"],
+[class~="bg-[#6B3FA0]"] {
+  color: #FFF8F1 !important;
+}
+
+[class~="bg-[#E6AE2E]"],
+[class~="bg-[#B5862A]"],
+[class~="bg-[#F5D993]"],
+[class~="bg-[#C8E8D4]"] {
+  color: #17140D !important;
+}
+
+[class~="bg-[#D26D53]"] [class*="text-"],
+[class~="bg-[#C05E45]"] [class*="text-"],
+[class~="bg-[#BD5D44]"] [class*="text-"],
+[class~="bg-[#BE5D45]"] [class*="text-"],
+[class~="bg-[#8C2D14]"] [class*="text-"],
+[class~="bg-[#7A2512]"] [class*="text-"],
+[class~="bg-[#556045]"] [class*="text-"],
+[class~="bg-[#465039]"] [class*="text-"],
+[class~="bg-[#445035]"] [class*="text-"],
+[class~="bg-[#49533C]"] [class*="text-"],
+[class~="bg-[#245EA8]"] [class*="text-"],
+[class~="bg-[#2F6B45]"] [class*="text-"],
+[class~="bg-[#3D6B9A]"] [class*="text-"],
+[class~="bg-[#6B3FA0]"] [class*="text-"] {
+  color: #FFF8F1 !important;
+}
+
+[class~="bg-[#E6AE2E]"] [class*="text-"],
+[class~="bg-[#B5862A]"] [class*="text-"],
+[class~="bg-[#F5D993]"] [class*="text-"],
+[class~="bg-[#C8E8D4]"] [class*="text-"] {
+  color: #17140D !important;
+}
