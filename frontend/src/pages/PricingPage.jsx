@@ -2,10 +2,8 @@ import { useTranslation } from "react-i18next";
 import { Check, Loader2, Sparkles, ArrowUp, ArrowDown, Zap, PawPrint, Shield, Users, Heart, Calendar, ArrowRight, Clock, AlertCircle } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useBilling, clearBillingCache } from "../lib/billing";
+import { useBilling } from "../lib/billing";
 import { toast } from "sonner";
-import api from "../lib/api";
-import CheckoutModal from "../components/CheckoutModal";
 import PromoBanner from "../components/PromoBanner";
 
 const PLAN_TIER = {
@@ -147,9 +145,6 @@ export default function PricingPage() {
   const [switchTarget, setSwitchTarget] = useState(null); // { plan, planId, isUpgrade }
   const [switching, setSwitching]       = useState(false);
 
-  // Embedded checkout modal state (new subscription, not a switch)
-  const [checkoutTarget, setCheckoutTarget] = useState(null); // { planId, planLabel, planPrice }
-
   // Cancel pending downgrade
   const [cancellingSwitch, setCancellingSwitch] = useState(false);
 
@@ -190,8 +185,7 @@ export default function PricingPage() {
   /**
    * Handles clicking a plan CTA.
    * - Existing active subscriber → show switch confirmation modal.
-   * - New / free user → open embedded checkout modal (no redirect).
-   *   Falls back to /dashboard/checkout page if modal fails to load.
+   * - New / free user → navigate to the dedicated Checkout Sessions page.
    */
   function handlePlanAction(plan) {
     const selectedPlanId = getPlanId(plan);
@@ -208,22 +202,7 @@ export default function PricingPage() {
       return;
     }
 
-    // New subscriber — open embedded checkout modal
-    setCheckoutTarget({
-      planId:    selectedPlanId,
-      planLabel: plan.name,
-      planPrice: getPlanPrice(plan),
-    });
-  }
-
-  /** Called by CheckoutModal when payment is confirmed and billing is active. */
-  function handleCheckoutSuccess(freshBilling) {
-    setCheckoutTarget(null);
-    // Always nuke the cache before refresh so the new plan state is fetched
-    // fresh from the server — never served from a stale "free tier" cache entry.
-    clearBillingCache();
-    refresh();
-    toast.success("You're all set — welcome to your new plan!");
+    navigate(`/dashboard/checkout?plan=${selectedPlanId}${activePromoCode ? `&promo=${encodeURIComponent(activePromoCode)}` : ""}`);
   }
 
   /** Cancels a pending plan downgrade and reverts the subscription. */
@@ -270,14 +249,6 @@ export default function PricingPage() {
     } finally {
       setReactivatingPlan(false);
     }
-  }
-
-  /** Fallback: navigate to full checkout page if modal is dismissed before success. */
-  function handleCheckoutClose() {
-    const t = checkoutTarget;
-    setCheckoutTarget(null);
-    // Offer fallback page via URL so the user can still complete on a full page
-    if (t) navigate(`/dashboard/checkout?plan=${t.planId}${activePromoCode ? `&promo=${encodeURIComponent(activePromoCode)}` : ""}`);
   }
 
   /** Called when user confirms a midcycle switch in the modal. */
@@ -527,19 +498,6 @@ export default function PricingPage() {
           onConfirm={confirmSwitch}
           onCancel={() => setSwitchTarget(null)}
           busy={switching}
-        />
-      )}
-
-      {/* ── Embedded checkout modal (new subscriptions) ─────────── */}
-      {checkoutTarget && (
-        <CheckoutModal
-          planId={checkoutTarget.planId}
-          planLabel={checkoutTarget.planLabel}
-          planPrice={checkoutTarget.planPrice}
-          isOpen={Boolean(checkoutTarget)}
-          onClose={handleCheckoutClose}
-          onSuccess={handleCheckoutSuccess}
-          initialPromoCode={activePromoCode}
         />
       )}
 

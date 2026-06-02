@@ -146,6 +146,20 @@ async def billing_create_checkout(
 
     # ── Guard: do not create duplicate or conflicting subscriptions ──
     caller_doc = await db.users.find_one({"user_id": user.user_id}, {"_id": 0}) or {}
+
+    # If we already have an open Checkout Session for this plan, resume it
+    # instead of creating a fresh session every click.
+    resumed_checkout = await _resume_open_checkout_session(user.user_id, payload.plan_id)
+    if resumed_checkout:
+        return resumed_checkout
+
+    # Older builds used a direct Subscription + PaymentIntent path that could
+    # leave a user locally flagged as "incomplete". Checkout Sessions can start
+    # cleanly once we drop that stale local marker.
+    if (caller_doc.get("subscription_status") or "").strip().lower() == "incomplete":
+        await _clear_local_incomplete_subscription(user.user_id)
+        caller_doc = await db.users.find_one({"user_id": user.user_id}, {"_id": 0}) or {}
+
     conflict_detail = _subscription_creation_conflict_detail(caller_doc)
     if conflict_detail:
         if (caller_doc.get("subscription_status") or "").strip().lower() == "incomplete":
@@ -195,8 +209,8 @@ async def billing_create_checkout(
             customer=stripe_customer_id,
             mode="subscription",
             line_items=[{"price": plan["stripe_price_id"], "quantity": 1}],
-            ui_mode="embedded_page",
-            return_url=f"{origin}/dashboard/pricing?checkout=success&session_id={{CHECKOUT_SESSION_ID}}",
+            ui_mode="elements",
+            return_url=f"{origin}/dashboard/checkout?plan={payload.plan_id}&checkout=success&session_id={{CHECKOUT_SESSION_ID}}",
             metadata=metadata,
         )
         if payload.coupon_code:
@@ -751,6 +765,74 @@ _BLOCKING_SUBSCRIPTION_STATUSES = {
     "unpaid",
     "incomplete",
 }
+
+
+async def _resume_open_checkout_session(user_id: str, requested_plan_id: str) -> Optional[dict]:
+    """
+    Reuses an open Checkout Session for the same user/plan when one exists.
+
+    This prevents users from getting stuck in a loop of "in progress" attempts
+    while still letting us discard expired or already-paid sessions cleanly.
+    """
+    if not user_id or not requested_plan_id or not STRIPE_API_KEY:
+        return None
+
+    tx = await db.payment_transactions.find_one(
+        {
+            "user_id": user_id,
+            "plan_id": requested_plan_id,
+            "session_id": {"$exists": True, "$ne": None},
+            "entitled": {"$ne": True},
+            "payment_status": {"$in": ["pending", "unpaid", None]},
+        },
+        {"_id": 0},
+        sort=[("created_at", -1)],
+    )
+    if not tx or not tx.get("session_id"):
+        return None
+
+    stripe_sdk.api_key = STRIPE_API_KEY
+    stripe_sdk.api_base = "https://api.stripe.com"
+
+    try:
+        sess = await asyncio.to_thread(
+            stripe_sdk.checkout.Session.retrieve,
+            tx["session_id"],
+        )
+    except Exception as e:
+        logger.warning(
+            f"resume-checkout: could not retrieve session {tx.get('session_id')}: {e}"
+        )
+        return None
+
+    session_status = stripe_value(sess, "status", "") or ""
+    payment_status = stripe_value(sess, "payment_status", "") or ""
+
+    if session_status == "open" and payment_status != "paid":
+        client_secret = stripe_value(sess, "client_secret", None)
+        if client_secret:
+            return {
+                "client_secret": client_secret,
+                "session_id": tx["session_id"],
+                "mode": "subscription",
+                "reused_existing": True,
+            }
+        return None
+
+    # Keep our local audit trail in sync when the session can no longer be used.
+    if session_status or payment_status:
+        await db.payment_transactions.update_one(
+            {"session_id": tx["session_id"]},
+            {
+                "$set": {
+                    "status": session_status or tx.get("status") or "initiated",
+                    "payment_status": payment_status or tx.get("payment_status") or "pending",
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }
+            },
+        )
+
+    return None
 
 
 async def _clear_local_incomplete_subscription(user_id: str):

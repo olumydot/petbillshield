@@ -12,11 +12,10 @@
 import { useState, useEffect, useCallback } from "react";
 import { loadStripe } from "@stripe/stripe-js";
 import {
-  Elements,
+  CheckoutElementsProvider,
   PaymentElement,
-  useStripe,
-  useElements,
-} from "@stripe/react-stripe-js";
+  useCheckoutElements,
+} from "@stripe/react-stripe-js/checkout";
 import { useSearchParams, Link, useNavigate } from "react-router-dom";
 import {
   ShieldCheck, Bell, TrendingUp, FolderHeart,
@@ -24,7 +23,7 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import api from "../lib/api";
-import { useBilling } from "../lib/billing";
+import { clearBillingCache, useBilling } from "../lib/billing";
 
 const stripePromise = loadStripe(process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY);
 
@@ -141,10 +140,9 @@ const PLAN_DETAILS = {
   },
 };
 
-// ── Inner form (must be inside <Elements>) ────────────────────────────────────
-function PaymentForm({ planId, planPrice, subscriptionId, paymentIntentId, onSuccess }) {
-  const stripe   = useStripe();
-  const elements = useElements();
+// ── Inner form (must be inside <CheckoutElementsProvider>) ───────────────────
+function PaymentForm({ planId, planPrice, sessionId, onSuccess }) {
+  const checkoutState = useCheckoutElements();
 
   const [confirming, setConfirming] = useState(false);
   const [errorMsg,   setErrorMsg]   = useState("");
@@ -169,51 +167,36 @@ function PaymentForm({ planId, planPrice, subscriptionId, paymentIntentId, onSuc
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!stripe || !elements) return;
+    if (checkoutState.type !== "success") return;
 
     setConfirming(true);
     setErrorMsg("");
 
-    const returnUrl = `${window.location.origin}/dashboard/pricing?payment_status=success&plan_id=${planId}`;
+    const returnUrl = `${window.location.origin}/dashboard/checkout?plan=${encodeURIComponent(planId)}&checkout=success&session_id=${encodeURIComponent(sessionId)}`;
 
-    const { error, paymentIntent } = await stripe.confirmPayment({
-      elements,
-      confirmParams: { return_url: returnUrl },
+    const result = await checkoutState.checkout.confirm({
+      returnUrl,
       redirect: "if_required",
     });
 
-    if (error) {
-      setErrorMsg(error.message || "Payment failed. Please try again.");
+    if (result.type === "error") {
+      setErrorMsg(result.error?.message || "Payment failed. Please try again.");
       setConfirming(false);
       return;
     }
 
-    const resolvedPaymentIntentId = paymentIntent?.id || paymentIntentId;
+    setSucceeded(true);
+    const completedSessionId = result.session?.id || sessionId;
 
-    if (paymentIntent?.status === "succeeded" && resolvedPaymentIntentId && subscriptionId) {
-      setSucceeded(true);
-      setPollMsg("Activating your plan…");
-      try {
-        const { data } = await api.post("/billing/confirm-payment", {
-          payment_intent_id: resolvedPaymentIntentId,
-          subscription_id: subscriptionId,
-        });
-        onSuccess(data);
-        return;
-      } catch {
-        setPollMsg("Payment confirmed. Finalizing your plan…");
-        pollUntilActive();
-        return;
-      }
-    }
-
-    if (paymentIntent?.status === "processing") {
-      setSucceeded(true);
-      setPollMsg("Payment is processing. We’ll activate your plan in just a moment.");
+    try {
+      await api.get(`/billing/status/${completedSessionId}`);
+      clearBillingCache();
       pollUntilActive();
-    } else {
-      setErrorMsg("Unexpected status. Please contact support.");
-      setConfirming(false);
+      return;
+    } catch {
+      setPollMsg("Payment confirmed. Finalizing your plan…");
+      pollUntilActive();
+      return;
     }
   };
 
@@ -243,7 +226,7 @@ function PaymentForm({ planId, planPrice, subscriptionId, paymentIntentId, onSuc
 
       <button
         type="submit"
-        disabled={!stripe || confirming}
+        disabled={checkoutState.type !== "success" || confirming}
         className="w-full rounded-xl bg-[#2D2C28] text-[#FAF9F6] py-3.5 text-sm font-semibold
                    flex items-center justify-center gap-2 hover:bg-[#3F3E39] transition-colors
                    disabled:opacity-60 disabled:cursor-not-allowed"
@@ -267,50 +250,104 @@ export default function CheckoutPage() {
   const { refresh }         = useBilling();
   const planId              = searchParams.get("plan") || "vault_monthly";
   const plan                = PLAN_DETAILS[planId] || PLAN_DETAILS.vault_monthly;
-  const paymentStatus       = searchParams.get("payment_status");  // 3DS return
+  const paymentStatus       = searchParams.get("payment_status");
+  const checkoutStatus      = searchParams.get("checkout");
+  const returnedSessionId   = searchParams.get("session_id") || "";
+  const promoCode           = searchParams.get("promo") || "";
+  const isReturningFromBank = paymentStatus === "success" || checkoutStatus === "success";
 
   const [clientSecret, setClientSecret] = useState(null);
-  const [subscriptionId, setSubscriptionId] = useState("");
-  const [paymentIntentId, setPaymentIntentId] = useState("");
+  const [sessionId, setSessionId] = useState("");
   const [loading,      setLoading]      = useState(true);
   const [initError,    setInitError]    = useState("");
+  const [resumeUrl,    setResumeUrl]    = useState("");
 
-  // Fetch client_secret on mount (or when planId changes)
+  const handleSuccess = useCallback(() => {
+    clearBillingCache();
+    refresh();
+    navigate("/dashboard/pricing?payment_status=success", { replace: true });
+  }, [navigate, refresh]);
+
+  // Handle bank redirect / return_url landings first.
   useEffect(() => {
+    if (!isReturningFromBank || !returnedSessionId) return undefined;
+
+    let cancelled = false;
     setClientSecret(null);
-    setSubscriptionId("");
-    setPaymentIntentId("");
+    setSessionId("");
     setInitError("");
+    setResumeUrl("");
+    setLoading(true);
+
+    const finalize = async (attempt = 0) => {
+      try {
+        await api.get(`/billing/status/${returnedSessionId}`);
+        clearBillingCache();
+        const { data } = await api.get("/billing/me");
+        if (cancelled) return;
+        if (data?.active) {
+          handleSuccess();
+          return;
+        }
+      } catch (_) {
+        // Keep retrying below.
+      }
+
+      if (attempt >= 10) {
+        if (!cancelled) {
+          setInitError("Payment was confirmed, but plan activation is taking longer than expected. Please refresh pricing in a moment.");
+          setLoading(false);
+        }
+        return;
+      }
+
+      window.setTimeout(() => finalize(attempt + 1), 1500);
+    };
+
+    finalize();
+    return () => { cancelled = true; };
+  }, [handleSuccess, isReturningFromBank, returnedSessionId]);
+
+  useEffect(() => {
+    if (isReturningFromBank) return undefined;
+
+    let cancelled = false;
+    setClientSecret(null);
+    setSessionId("");
+    setInitError("");
+    setResumeUrl("");
     setLoading(true);
 
     api
-      .post("/billing/subscribe", { plan_id: planId })
-      .then(({ data }) => {
-        if (data?.already_active) {
-          refresh();
-          navigate("/dashboard/pricing?payment_status=success", { replace: true });
-          return;
-        }
-        setClientSecret(data.client_secret);
-        setSubscriptionId(data.subscription_id || "");
-        setPaymentIntentId(data.payment_intent_id || "");
+      .post("/billing/checkout", {
+        plan_id: planId,
+        origin_url: window.location.origin,
+        ...(promoCode ? { coupon_code: promoCode } : {}),
       })
-      .catch((e) =>
-        setInitError(
-          e?.response?.data?.detail ||
-          "Could not initialise checkout. Please try again."
-        )
-      )
-      .finally(() => setLoading(false));
-  }, [planId, navigate, refresh]);
+      .then(({ data }) => {
+        if (cancelled) return;
+        setClientSecret(data.client_secret);
+        setSessionId(data.session_id || "");
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        const detail = e?.response?.data?.detail;
+        const message = typeof detail === "string" ? detail : detail?.message;
+        setResumeUrl(typeof detail === "object" ? detail?.resume_url || "" : "");
+        setInitError(message || "Could not initialise checkout. Please try again.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
 
-  function handleSuccess() {
-    refresh();
-    navigate("/dashboard/pricing?payment_status=success");
-  }
+    return () => { cancelled = true; };
+  }, [isReturningFromBank, planId, promoCode]);
 
-  // ── 3DS return: payment_status=success landed back from bank auth ──────────
-  if (paymentStatus === "success") {
+  const checkoutOptions = clientSecret
+    ? { clientSecret, elementsOptions: { appearance: STRIPE_APPEARANCE } }
+    : null;
+
+  if (isReturningFromBank && loading) {
     return (
       <div className="fixed inset-0 bg-[#FAF9F6] flex items-center justify-center p-8">
         <div className="text-center space-y-4 max-w-sm">
@@ -324,10 +361,6 @@ export default function CheckoutPage() {
       </div>
     );
   }
-
-  const elementsOptions = clientSecret
-    ? { clientSecret, appearance: STRIPE_APPEARANCE }
-    : null;
 
   return (
     <div className="w-full">
@@ -397,21 +430,28 @@ export default function CheckoutPage() {
               )}
 
               {!loading && initError && (
-                <div className="rounded-xl bg-[#FEF0EE] border border-[#F2C5B7] p-4 text-sm text-[#8C2D14]">
-                  {initError}
+                <div className="rounded-xl bg-[#FEF0EE] border border-[#F2C5B7] p-4 text-sm text-[#8C2D14] space-y-3">
+                  <p>{initError}</p>
+                  {resumeUrl && (
+                    <a
+                      href={resumeUrl}
+                      className="inline-flex items-center rounded-lg bg-[#2D2C28] px-3 py-2 text-sm font-semibold text-[#FAF9F6] hover:bg-[#3F3E39] transition-colors"
+                    >
+                      Continue existing checkout
+                    </a>
+                  )}
                 </div>
               )}
 
-              {!loading && clientSecret && elementsOptions && (
-                <Elements stripe={stripePromise} options={elementsOptions}>
+              {!loading && clientSecret && checkoutOptions && (
+                <CheckoutElementsProvider stripe={stripePromise} options={checkoutOptions}>
                   <PaymentForm
                     planId={planId}
                     planPrice={plan.price}
-                    subscriptionId={subscriptionId}
-                    paymentIntentId={paymentIntentId}
+                    sessionId={sessionId}
                     onSuccess={handleSuccess}
                   />
-                </Elements>
+                </CheckoutElementsProvider>
               )}
 
               <div className="mt-6 flex items-center gap-2 text-xs text-[#65635C]">

@@ -70,15 +70,12 @@ export function useBilling() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /** Starts a Stripe checkout for a plan_id and redirects to Stripe-hosted page. */
-  const checkout = useCallback(async (plan_id) => {
-    const { data } = await api.post("/billing/checkout", {
-      plan_id,
-      origin_url: window.location.origin,
-    });
-    if (data?.url) {
-      window.location.href = data.url;
-    }
+  /** Opens the dedicated Checkout Sessions page for a plan. */
+  const checkout = useCallback(async (plan_id, promo_code = "") => {
+    const nextUrl = new URL("/dashboard/checkout", window.location.origin);
+    nextUrl.searchParams.set("plan", plan_id);
+    if (promo_code) nextUrl.searchParams.set("promo", promo_code);
+    window.location.href = nextUrl.toString();
   }, []);
 
   /**
@@ -93,9 +90,8 @@ export function useBilling() {
   }, [refresh]);
 
   /**
-   * Creates a Stripe Subscription (incomplete) and returns the client_secret
-   * so the frontend can confirm payment with PaymentElement — no redirect.
-   * Returns { client_secret, subscription_id, plan_id }.
+   * Legacy direct-subscription helper.
+   * Kept for backward compatibility while the app moves to Checkout Sessions.
    */
   const subscribe = useCallback(async (plan_id) => {
     const { data } = await api.post("/billing/subscribe", { plan_id });
