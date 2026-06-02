@@ -189,12 +189,74 @@ CLAIM_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 STRIPE_API_KEY = os.environ.get('STRIPE_API_KEY')
 RESEND_API_KEY = os.environ.get('RESEND_API_KEY')
 SENDER_EMAIL = os.environ.get('SENDER_EMAIL', 'onboarding@resend.dev')
+RESEND_TEMPLATE_WELCOME = os.environ.get("RESEND_TEMPLATE_WELCOME", "").strip()
+RESEND_TEMPLATE_RENEWAL_SUCCESS = os.environ.get("RESEND_TEMPLATE_RENEWAL_SUCCESS", "").strip()
+RESEND_TEMPLATE_RENEWAL_REMINDER = os.environ.get("RESEND_TEMPLATE_RENEWAL_REMINDER", "").strip()
+RESEND_TEMPLATE_PAYMENT_FAILED = os.environ.get("RESEND_TEMPLATE_PAYMENT_FAILED", "").strip()
+RESEND_TEMPLATE_SUBSCRIPTION_CANCELED = os.environ.get("RESEND_TEMPLATE_SUBSCRIPTION_CANCELED", "").strip()
+RESEND_TEMPLATE_SUBSCRIPTION_REACTIVATED = os.environ.get("RESEND_TEMPLATE_SUBSCRIPTION_REACTIVATED", "").strip()
+RESEND_TEMPLATE_PLAN_CHANGED = os.environ.get("RESEND_TEMPLATE_PLAN_CHANGED", "").strip()
+RESEND_TEMPLATE_PASSWORD_RESET = os.environ.get("RESEND_TEMPLATE_PASSWORD_RESET", "").strip()
+RESEND_TEMPLATE_VERIFY_EMAIL_CHANGE = os.environ.get("RESEND_TEMPLATE_VERIFY_EMAIL_CHANGE", "").strip()
 ADMIN_EMAILS = [e.strip().lower() for e in (os.environ.get('ADMIN_EMAILS', '') or '').split(',') if e.strip()]
 CONTACT_INBOX_EMAIL = os.environ.get('CONTACT_INBOX_EMAIL', '')
 if RESEND_API_KEY:
     resend.api_key = RESEND_API_KEY
 if STRIPE_API_KEY:
     stripe_sdk.api_key = STRIPE_API_KEY
+
+RESEND_TEMPLATE_IDS = {
+    "welcome": RESEND_TEMPLATE_WELCOME,
+    "renewal_success": RESEND_TEMPLATE_RENEWAL_SUCCESS,
+    "renewal_reminder": RESEND_TEMPLATE_RENEWAL_REMINDER,
+    "payment_failed": RESEND_TEMPLATE_PAYMENT_FAILED,
+    "subscription_canceled": RESEND_TEMPLATE_SUBSCRIPTION_CANCELED,
+    "subscription_reactivated": RESEND_TEMPLATE_SUBSCRIPTION_REACTIVATED,
+    "plan_changed": RESEND_TEMPLATE_PLAN_CHANGED,
+    "password_reset": RESEND_TEMPLATE_PASSWORD_RESET,
+    "verify_email_change": RESEND_TEMPLATE_VERIFY_EMAIL_CHANGE,
+}
+
+
+async def send_resend_email(
+    *,
+    to,
+    subject: str,
+    html: str | None = None,
+    template_key: str | None = None,
+    template_variables: dict | None = None,
+    reply_to: str | list[str] | None = None,
+):
+    """
+    Send an email through Resend.
+
+    If a template ID is configured for template_key, we send via
+    `template: { id, variables }`. Otherwise we fall back to raw HTML.
+    """
+    if not RESEND_API_KEY:
+        logger.debug(f"RESEND not configured — would send '{subject}' to {to}")
+        return None
+
+    template_id = RESEND_TEMPLATE_IDS.get(template_key or "", "")
+    params = {
+        "from": SENDER_EMAIL,
+        "to": to,
+        "subject": subject,
+    }
+    if reply_to:
+        params["reply_to"] = reply_to
+    if template_id:
+        params["template"] = {
+            "id": template_id,
+            "variables": template_variables or {},
+        }
+    elif html:
+        params["html"] = html
+    else:
+        raise ValueError("send_resend_email requires html when no template_id is configured")
+
+    resend.api_key = RESEND_API_KEY
+    return await asyncio.to_thread(resend.Emails.send, params)
 
 
 def _is_admin_email(email: Optional[str]) -> bool:

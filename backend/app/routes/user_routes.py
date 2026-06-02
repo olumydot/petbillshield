@@ -4,11 +4,10 @@ from pydantic import BaseModel, EmailStr
 from typing import Optional
 import secrets
 import hashlib
-import resend
 
 from app.shared import (
     db, User, get_current_user, verify_password, hash_password,
-    validate_password_strength, SENDER_EMAIL, FRONTEND_URL, logger,
+    validate_password_strength, FRONTEND_URL, logger, send_resend_email,
     datetime, timezone, timedelta,
 )
 
@@ -239,11 +238,17 @@ async def request_email_change(
     verify_url = f"{FRONTEND_URL}/dashboard/settings?verify_email={token}"
 
     try:
-        resend.Emails.send({
-            "from": SENDER_EMAIL,
-            "to":   new_email,
-            "subject": "Verify your new PetBill Shield email address",
-            "html": f"""
+        await send_resend_email(
+            to=new_email,
+            subject="Verify your new PetBill Shield email address",
+            template_key="verify_email_change",
+            template_variables={
+                "new_email": new_email,
+                "verify_url": verify_url,
+                "expires_hours": 24,
+                "frontend_url": FRONTEND_URL,
+            },
+            html=f"""
             <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;line-height:1.7;color:#2D2C28;">
               <h2 style="margin-bottom:8px;">Verify your new email</h2>
               <p>You requested to change your PetBill Shield login email to
@@ -263,7 +268,7 @@ async def request_email_change(
               </p>
             </div>
             """,
-        })
+        )
     except Exception as e:
         logger.warning(f"Email change send failed: {e}")
         raise HTTPException(

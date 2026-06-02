@@ -7,7 +7,6 @@ import httpx
 import secrets
 import hashlib
 from pydantic import BaseModel, EmailStr
-import resend
 from fastapi import APIRouter, HTTPException, Depends, Request, Response, UploadFile, File
 from fastapi.responses import RedirectResponse
 from google.oauth2 import id_token
@@ -34,7 +33,7 @@ from app.shared import (
     _is_admin_email,
     _hash_session_token,
     check_magic_bytes,
-    SENDER_EMAIL,
+    send_resend_email,
     limiter,
     logger,
 )
@@ -231,11 +230,16 @@ async def forgot_password(request: Request, payload: ForgotPasswordRequest):
     reset_url = f"{FRONTEND_URL}/auth?reset_token={token}"
 
     try:
-        resend.Emails.send({
-            "from":    SENDER_EMAIL,
-            "to":      email,
-            "subject": "Reset your PetBill Shield password",
-            "html": f"""
+        await send_resend_email(
+            to=email,
+            subject="Reset your PetBill Shield password",
+            template_key="password_reset",
+            template_variables={
+                "reset_url": reset_url,
+                "expires_minutes": 30,
+                "frontend_url": FRONTEND_URL,
+            },
+            html=f"""
                 <div style="font-family: Arial, sans-serif; line-height: 1.6;">
                     <h2>Reset your password</h2>
                     <p>Click the button below to reset your PetBill Shield password.</p>
@@ -247,7 +251,7 @@ async def forgot_password(request: Request, payload: ForgotPasswordRequest):
                     <p>This link expires in 30 minutes. If you did not request this, you can safely ignore this email.</p>
                 </div>
             """,
-        })
+        )
     except Exception as e:
         logger.warning(f"Password reset email failed: {e}")
         # Still return the safe response — don't reveal that email failed

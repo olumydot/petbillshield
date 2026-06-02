@@ -824,19 +824,6 @@ _EMAIL_BASE = """
 def _build_email(body: str) -> str:
     return _EMAIL_BASE.format(body=body, frontend_url=FRONTEND_URL)
 
-async def _send_email(to: str, subject: str, html: str) -> None:
-    """Send via Resend — always fire-and-forget, never raises."""
-    if not RESEND_API_KEY:
-        logger.debug(f"RESEND not configured — would send '{subject}' to {to}")
-        return
-    try:
-        resend.api_key = RESEND_API_KEY
-        resend.Emails.send({"from": SENDER_EMAIL, "to": to, "subject": subject, "html": html})
-        logger.info(f"Email sent: '{subject}' → {to}")
-    except Exception as exc:
-        logger.warning(f"Email delivery failed ({subject} → {to}): {exc}")
-
-
 async def email_welcome(email: str, name: str, plan_label: str,
                         plan_id: str, expires_at: Optional[str]) -> None:
     plan = PLANS.get(plan_id) or {}
@@ -857,7 +844,23 @@ async def email_welcome(email: str, name: str, plan_label: str,
 <div class="divider"></div>
 <p style="font-size:13px;color:#8A887F">Questions? Just reply to this email or visit our <a href="{FRONTEND_URL}/contact" style="color:#D26D53">contact page</a>. You can manage or cancel your plan at any time from your account.</p>
 """)
-    await _send_email(email, f"Welcome to {plan_label} — PetBill Shield", html)
+    await send_resend_email(
+        to=email,
+        subject=f"Welcome to {plan_label} — PetBill Shield",
+        html=html,
+        template_key="welcome",
+        template_variables={
+            "first_name": first_name,
+            "plan_label": plan_label,
+            "plan_id": plan_id,
+            "price": price,
+            "billing_frequency": freq,
+            "expires_at": _fmt_date(expires_at),
+            "dashboard_url": f"{FRONTEND_URL}/dashboard",
+            "analyze_url": f"{FRONTEND_URL}/dashboard/analyze",
+            "contact_url": f"{FRONTEND_URL}/contact",
+        },
+    )
 
 
 async def email_renewal_success(email: str, name: str, plan_label: str,
@@ -879,7 +882,22 @@ async def email_renewal_success(email: str, name: str, plan_label: str,
 <div class="divider"></div>
 <p style="font-size:13px;color:#8A887F">If you didn't expect this charge, <a href="{FRONTEND_URL}/contact" style="color:#D26D53">contact us</a> and we'll help you out.</p>
 """)
-    await _send_email(email, f"Your {plan_label} subscription has renewed — PetBill Shield", html)
+    await send_resend_email(
+        to=email,
+        subject=f"Your {plan_label} subscription has renewed — PetBill Shield",
+        html=html,
+        template_key="renewal_success",
+        template_variables={
+            "first_name": first_name,
+            "plan_label": plan_label,
+            "plan_id": plan_id,
+            "price": price,
+            "billing_frequency": freq,
+            "next_renewal": _fmt_date(next_renewal),
+            "dashboard_url": f"{FRONTEND_URL}/dashboard",
+            "pricing_url": f"{FRONTEND_URL}/dashboard/pricing",
+        },
+    )
 
 
 async def email_renewal_reminder(email: str, name: str, plan_label: str,
@@ -900,7 +918,22 @@ async def email_renewal_reminder(email: str, name: str, plan_label: str,
 <p>Renewal happens automatically — no action needed. If you want to make changes, you can do so from your account before the renewal date.</p>
 <a href="{FRONTEND_URL}/dashboard/pricing" class="btn">Manage subscription →</a>
 """)
-    await _send_email(email, f"Your {plan_label} subscription renews in {days_left} days — PetBill Shield", html)
+    await send_resend_email(
+        to=email,
+        subject=f"Your {plan_label} subscription renews in {days_left} days — PetBill Shield",
+        html=html,
+        template_key="renewal_reminder",
+        template_variables={
+            "first_name": first_name,
+            "plan_label": plan_label,
+            "plan_id": plan_id,
+            "price": price,
+            "billing_frequency": freq,
+            "days_left": days_left,
+            "renewal_date": _fmt_date(renewal_date),
+            "pricing_url": f"{FRONTEND_URL}/dashboard/pricing",
+        },
+    )
 
 
 async def email_payment_failed(email: str, name: str, plan_label: str,
@@ -919,7 +952,18 @@ async def email_payment_failed(email: str, name: str, plan_label: str,
 <p>Common fixes: make sure your card hasn't expired and you have sufficient funds. Stripe will retry automatically.</p>
 <a href="{FRONTEND_URL}/dashboard/pricing" class="btn">Update payment method →</a>
 """)
-    await _send_email(email, f"Payment failed for your {plan_label} subscription — PetBill Shield", html)
+    await send_resend_email(
+        to=email,
+        subject=f"Payment failed for your {plan_label} subscription — PetBill Shield",
+        html=html,
+        template_key="payment_failed",
+        template_variables={
+            "first_name": first_name,
+            "plan_label": plan_label,
+            "next_attempt": _fmt_date(next_attempt),
+            "pricing_url": f"{FRONTEND_URL}/dashboard/pricing",
+        },
+    )
 
 
 async def email_subscription_canceled(email: str, name: str, plan_label: str,
@@ -939,7 +983,19 @@ async def email_subscription_canceled(email: str, name: str, plan_label: str,
 <div class="divider"></div>
 <p style="font-size:13px;color:#8A887F">We'd love to know what we could do better. <a href="{FRONTEND_URL}/contact" style="color:#D26D53">Leave us a note</a> — it really helps.</p>
 """)
-    await _send_email(email, f"Subscription cancelled — your access continues until {_fmt_date(access_until)}", html)
+    await send_resend_email(
+        to=email,
+        subject=f"Subscription cancelled — your access continues until {_fmt_date(access_until)}",
+        html=html,
+        template_key="subscription_canceled",
+        template_variables={
+            "first_name": first_name,
+            "plan_label": plan_label,
+            "access_until": _fmt_date(access_until),
+            "pricing_url": f"{FRONTEND_URL}/dashboard/pricing",
+            "contact_url": f"{FRONTEND_URL}/contact",
+        },
+    )
 
 
 async def email_subscription_reactivated(email: str, name: str, plan_label: str,
@@ -956,7 +1012,18 @@ async def email_subscription_reactivated(email: str, name: str, plan_label: str,
 <p>Everything continues as normal. Your access is fully active and will auto-renew.</p>
 <a href="{FRONTEND_URL}/dashboard" class="btn">Back to dashboard →</a>
 """)
-    await _send_email(email, f"Your {plan_label} subscription is reactivated — PetBill Shield", html)
+    await send_resend_email(
+        to=email,
+        subject=f"Your {plan_label} subscription is reactivated — PetBill Shield",
+        html=html,
+        template_key="subscription_reactivated",
+        template_variables={
+            "first_name": first_name,
+            "plan_label": plan_label,
+            "renews_at": _fmt_date(renews_at),
+            "dashboard_url": f"{FRONTEND_URL}/dashboard",
+        },
+    )
 
 
 async def email_plan_changed(email: str, name: str,
@@ -985,7 +1052,20 @@ async def email_plan_changed(email: str, name: str,
 <a href="{FRONTEND_URL}/dashboard/pricing" class="btn">View plan details →</a>
 """)
     subject = f"{'Upgraded to' if is_upgrade else 'Plan switching to'} {new_label} — PetBill Shield"
-    await _send_email(email, subject, html)
+    await send_resend_email(
+        to=email,
+        subject=subject,
+        html=html,
+        template_key="plan_changed",
+        template_variables={
+            "first_name": first_name,
+            "old_label": old_label,
+            "new_label": new_label,
+            "is_upgrade": is_upgrade,
+            "effective_date": _fmt_date(effective_date) if effective_date else "Immediately",
+            "pricing_url": f"{FRONTEND_URL}/dashboard/pricing",
+        },
+    )
 
 
 # ── Scheduled renewal reminder dispatch ──────────────────────────────────────
