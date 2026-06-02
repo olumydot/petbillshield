@@ -110,3 +110,10 @@ def test_checkout_success_paths_share_once_only_welcome_email_guard():
     source = ROUTE_FILE.read_text()
     assert "async def _queue_welcome_email_once(" in source
     assert source.count("await _queue_welcome_email_once(") >= 2
+
+
+def test_missing_stripe_subscription_is_self_healed():
+    source = ROUTE_FILE.read_text()
+    assert "async def _clear_stale_missing_subscription(" in source
+    assert "if _is_missing_subscription_error(e):" in source
+    assert source.count("await _clear_stale_missing_subscription(") >= 3

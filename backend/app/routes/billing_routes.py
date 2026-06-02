@@ -160,6 +160,25 @@ async def billing_create_checkout(
         await _clear_local_incomplete_subscription(user.user_id)
         caller_doc = await db.users.find_one({"user_id": user.user_id}, {"_id": 0}) or {}
 
+    local_subscription_id = caller_doc.get("stripe_subscription_id")
+    local_subscription_status = (caller_doc.get("subscription_status") or "").strip().lower()
+    if local_subscription_id and local_subscription_status in _BLOCKING_SUBSCRIPTION_STATUSES:
+        stripe_sdk.api_key = STRIPE_API_KEY
+        stripe_sdk.api_base = "https://api.stripe.com"
+        try:
+            await asyncio.to_thread(
+                stripe_sdk.Subscription.retrieve,
+                local_subscription_id,
+            )
+        except Exception as e:
+            if _is_missing_subscription_error(e):
+                await _clear_stale_missing_subscription(user.user_id, local_subscription_id)
+                caller_doc = await db.users.find_one({"user_id": user.user_id}, {"_id": 0}) or {}
+            else:
+                logger.warning(
+                    f"checkout: could not verify local subscription {local_subscription_id}: {e}"
+                )
+
     conflict_detail = _subscription_creation_conflict_detail(caller_doc)
     if conflict_detail:
         if (caller_doc.get("subscription_status") or "").strip().lower() == "incomplete":
@@ -312,6 +331,26 @@ async def billing_create_subscription(
     resumed = await _resume_incomplete_subscription(caller_doc, payload.plan_id)
     if resumed:
         return resumed
+
+    local_subscription_id = caller_doc.get("stripe_subscription_id")
+    local_subscription_status = (caller_doc.get("subscription_status") or "").strip().lower()
+    if local_subscription_id and local_subscription_status in _BLOCKING_SUBSCRIPTION_STATUSES:
+        stripe_sdk.api_key = STRIPE_API_KEY
+        stripe_sdk.api_base = "https://api.stripe.com"
+        try:
+            await asyncio.to_thread(
+                stripe_sdk.Subscription.retrieve,
+                local_subscription_id,
+                expand=["latest_invoice.payments"],
+            )
+        except Exception as e:
+            if _is_missing_subscription_error(e):
+                await _clear_stale_missing_subscription(user.user_id, local_subscription_id)
+                caller_doc = await db.users.find_one({"user_id": user.user_id}, {"_id": 0}) or {}
+            else:
+                logger.warning(
+                    f"subscribe: could not verify local subscription {local_subscription_id}: {e}"
+                )
 
     conflict_detail = _subscription_creation_conflict_detail(caller_doc)
     if conflict_detail:
@@ -848,6 +887,49 @@ async def _clear_local_incomplete_subscription(user_id: str):
                 "pending_plan_id": "",
             }
         },
+    )
+
+
+async def _clear_stale_missing_subscription(user_id: str, subscription_id: Optional[str] = None):
+    """
+    Clears locally stored Stripe subscription state when Stripe reports that
+    the subscription no longer exists.
+
+    This most often happens after switching environments or when a previously
+    incomplete checkout was deleted remotely. We intentionally keep entitlement
+    history intact and only remove the blocking Stripe linkage/state.
+    """
+    if not user_id:
+        return
+
+    logger.info(
+        f"billing self-heal: clearing stale Stripe subscription state for "
+        f"user {user_id} subscription {subscription_id or 'unknown'}"
+    )
+
+    await db.users.update_one(
+        {"user_id": user_id},
+        {
+            "$unset": {
+                "stripe_subscription_id": "",
+                "subscription_status": "",
+                "pending_plan_id": "",
+                "cancel_at_period_end": "",
+                "cancel_at": "",
+                "pending_downgrade_plan_id": "",
+                "pending_downgrade_label": "",
+                "pending_downgrade_at": "",
+            }
+        },
+    )
+
+
+def _is_missing_subscription_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return (
+        "no such subscription" in message
+        or "resource_missing" in message
+        or "invalid_request_error" in message and "subscription" in message
     )
 
 
@@ -1857,7 +1939,16 @@ async def billing_me(user: User = Depends(get_current_user)):
                     doc["plan_kind"]  = "subscription"
 
         except Exception as e:
-            logger.warning(f"Could not refresh Stripe subscription status: {e}")
+            if _is_missing_subscription_error(e):
+                await _clear_stale_missing_subscription(user.user_id, stripe_subscription_id)
+                doc = await db.users.find_one({"user_id": user.user_id}, {"_id": 0}) or {}
+                subscription_status = (doc.get("subscription_status") or "").strip().lower()
+                stripe_subscription_id = doc.get("stripe_subscription_id")
+                cancel_at_period_end = doc.get("cancel_at_period_end", False)
+                cancel_at = doc.get("cancel_at", None)
+                is_canceling = cancel_at_period_end or bool(cancel_at)
+            else:
+                logger.warning(f"Could not refresh Stripe subscription status: {e}")
 
     active = False
 
