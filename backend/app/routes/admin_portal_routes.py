@@ -288,13 +288,17 @@ class ReplyRequest(BaseModel):
     body:    str          # plain text — will be wrapped in HTML template
 
 
+def _contact_message_lookup_query(msg_id: str) -> dict:
+    return {"$or": [{"contact_id": msg_id}, {"message_id": msg_id}]}
+
+
 @router.post("/admin/portal/inbox/{msg_id}/reply")
 async def portal_reply(
     msg_id:  str,
     payload: ReplyRequest,
     admin: User = Depends(require_admin),
 ):
-    msg = await db.contact_messages.find_one({"message_id": msg_id}, {"_id": 0})
+    msg = await db.contact_messages.find_one(_contact_message_lookup_query(msg_id), {"_id": 0})
     if not msg:
         raise HTTPException(status_code=404, detail="Message not found")
 
@@ -320,7 +324,7 @@ async def portal_reply(
         raise HTTPException(status_code=500, detail=f"Send failed: {e}")
 
     await db.contact_messages.update_one(
-        {"message_id": msg_id},
+        _contact_message_lookup_query(msg_id),
         {"$set": {
             "replied":     True,
             "replied_at":  datetime.now(timezone.utc).isoformat(),
@@ -333,7 +337,7 @@ async def portal_reply(
 @router.patch("/admin/portal/inbox/{msg_id}/read")
 async def portal_mark_read(msg_id: str, _: User = Depends(require_admin)):
     await db.contact_messages.update_one(
-        {"message_id": msg_id},
+        _contact_message_lookup_query(msg_id),
         {"$set": {"read": True, "read_at": datetime.now(timezone.utc).isoformat()}},
     )
     return {"ok": True}

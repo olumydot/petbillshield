@@ -3,6 +3,10 @@ import { Mail, Reply, Sparkles, Check, X, Loader2, ChevronDown, ChevronUp } from
 import { toast } from "sonner";
 import api from "@/lib/api";
 
+function getMessageId(msg) {
+  return msg?.contact_id || msg?.message_id || "";
+}
+
 export default function Inbox() {
   const [messages,   setMessages]   = useState([]);
   const [pagination, setPagination] = useState(null);
@@ -32,7 +36,7 @@ export default function Inbox() {
   useEffect(() => { load(); }, [page, unreadOnly]); // eslint-disable-line
 
   const openReply = (msg) => {
-    setReplyForm(msg.message_id);
+    setReplyForm(getMessageId(msg));
     setSubject(`Re: ${msg.subject || "Your message to PetBill Shield"}`);
     setBody("");
     setAiIntent(`Reply to this message: "${msg.message?.slice(0, 200)}"`);
@@ -62,7 +66,7 @@ export default function Inbox() {
       toast.success("Reply sent!");
       setReplyForm(null);
       setMessages(msgs => msgs.map(m =>
-        m.message_id === msgId ? { ...m, replied: true } : m
+        getMessageId(m) === msgId ? { ...m, replied: true } : m
       ));
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Send failed");
@@ -93,7 +97,7 @@ export default function Inbox() {
         : (
         <div className="space-y-2">
           {messages.map((msg) => (
-            <div key={msg.message_id}
+            <div key={getMessageId(msg)}
               className={`rounded-2xl border overflow-hidden transition ${
                 msg.replied ? "border-[#2A2924] bg-[#1A1917]" : "border-[#3D2E1A] bg-[#221D14]"
               }`}
@@ -101,7 +105,7 @@ export default function Inbox() {
               {/* Header row */}
               <button
                 className="w-full flex items-center gap-3 px-5 py-4 text-left"
-                onClick={() => setExpanded(expanded === msg.message_id ? null : msg.message_id)}
+                onClick={() => setExpanded(expanded === getMessageId(msg) ? null : getMessageId(msg))}
               >
                 <div className={`w-2 h-2 rounded-full shrink-0 ${msg.replied ? "bg-[#556045]" : "bg-[#E6AE2E]"}`} />
                 <div className="flex-1 min-w-0">
@@ -115,19 +119,19 @@ export default function Inbox() {
                 <div className="text-xs text-[#65635C] shrink-0">
                   {new Date(msg.created_at).toLocaleDateString()}
                 </div>
-                {expanded === msg.message_id
+                {expanded === getMessageId(msg)
                   ? <ChevronUp size={14} className="text-[#65635C] shrink-0" />
                   : <ChevronDown size={14} className="text-[#65635C] shrink-0" />
                 }
               </button>
 
               {/* Expanded content */}
-              {expanded === msg.message_id && (
+              {expanded === getMessageId(msg) && (
                 <div className="px-5 pb-5 border-t border-[#2A2924] space-y-4">
                   <p className="text-sm text-[#C9C6BD] leading-relaxed mt-4 whitespace-pre-wrap">{msg.message}</p>
 
                   {/* Reply form toggle */}
-                  {replyForm !== msg.message_id ? (
+                  {replyForm !== getMessageId(msg) ? (
                     <button
                       onClick={() => openReply(msg)}
                       className="rounded-xl bg-[#D26D53] hover:bg-[#C05E45] text-white text-xs font-semibold px-4 py-2 inline-flex items-center gap-1.5 transition"
@@ -170,7 +174,7 @@ export default function Inbox() {
                       />
                       <div className="flex gap-2">
                         <button
-                          onClick={() => sendReply(msg.message_id)} disabled={sending || !body.trim()}
+                          onClick={() => sendReply(getMessageId(msg))} disabled={sending || !body.trim()}
                           className="rounded-xl bg-[#556045] hover:bg-[#445035] text-white text-xs font-semibold px-4 py-2 inline-flex items-center gap-1.5 disabled:opacity-40 transition"
                         >
                           {sending ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}

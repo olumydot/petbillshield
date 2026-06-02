@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
-import { Users, PawPrint, FileSearch, DollarSign, MessageSquare, Star, TrendingUp, Mail, Tag, Activity } from "lucide-react";
+import { Users, PawPrint, FileSearch, DollarSign, MessageSquare, Star, TrendingUp, Mail, Tag, Activity, Loader2 } from "lucide-react";
 import api from "@/lib/api";
+import { toast } from "sonner";
+import { useAuth } from "@/context/AuthContext";
 
 function StatCard({ label, value, icon: Icon, color = "#D26D53", sub }) {
   return (
@@ -18,12 +20,44 @@ function StatCard({ label, value, icon: Icon, color = "#D26D53", sub }) {
 }
 
 export default function Overview() {
+  const { user } = useAuth();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [weeklyEmail, setWeeklyEmail] = useState("");
+  const [weeklySending, setWeeklySending] = useState(false);
+  const [weeklyResult, setWeeklyResult] = useState(null);
 
   useEffect(() => {
     api.get("/admin/portal/stats").then(({ data }) => setStats(data)).finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (user?.email && !weeklyEmail) {
+      setWeeklyEmail(user.email);
+    }
+  }, [user, weeklyEmail]);
+
+  const sendWeeklyTest = async () => {
+    const targetEmail = weeklyEmail.trim();
+    if (!targetEmail) {
+      toast.error("Enter an email address first.");
+      return;
+    }
+
+    setWeeklySending(true);
+    setWeeklyResult(null);
+    try {
+      const { data } = await api.post(
+        `/admin/weekly-reports/dispatch-now?target_email=${encodeURIComponent(targetEmail)}&force=true&immediate=true`
+      );
+      setWeeklyResult(data);
+      toast.success("Weekly report test triggered.");
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Couldn't trigger weekly report test.");
+    } finally {
+      setWeeklySending(false);
+    }
+  };
 
   if (loading) return <div className="text-[#65635C] text-sm animate-pulse">Loading stats…</div>;
   if (!stats)  return <div className="text-[#8C2D14] text-sm">Failed to load stats.</div>;
@@ -82,6 +116,42 @@ export default function Overview() {
               : "Enable a banner from Sales & Promos to show it on public billing surfaces."}
           </div>
         </div>
+      </div>
+
+      <div className="rounded-2xl border border-[#2A2924] bg-[#1E1D1A] p-5">
+        <div className="flex items-center gap-2 mb-3">
+          <Mail size={14} className="text-[#556045]" />
+          <div className="text-xs text-[#8A887F] font-medium">Weekly report test</div>
+        </div>
+        <p className="text-sm text-[#8A887F] leading-relaxed max-w-2xl">
+          Trigger one immediate Sunday-style AI weekly report for a paid subscriber. This uses the same queue-based
+          backend flow, but runs it right away for the email you provide.
+        </p>
+        <div className="mt-4 flex flex-col xl:flex-row gap-3 xl:items-end">
+          <label className="flex-1">
+            <div className="text-xs text-[#65635C] mb-1">Target email</div>
+            <input
+              type="email"
+              value={weeklyEmail}
+              onChange={(e) => setWeeklyEmail(e.target.value)}
+              placeholder="you@example.com"
+              className="w-full rounded-xl border border-[#2A2924] bg-[#111] px-4 py-3 text-sm text-[#FAF9F6] placeholder:text-[#65635C] outline-none focus:ring-1 focus:ring-[#D26D53]"
+            />
+          </label>
+          <button
+            onClick={sendWeeklyTest}
+            disabled={weeklySending}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#2D2C28] hover:bg-[#3A3934] px-4 py-3 text-sm font-semibold text-[#FAF9F6] disabled:opacity-60 transition"
+          >
+            {weeklySending ? <Loader2 size={15} className="animate-spin" /> : <Mail size={15} />}
+            Send test report
+          </button>
+        </div>
+        {weeklyResult && (
+          <pre className="mt-4 overflow-x-auto whitespace-pre-wrap rounded-2xl border border-[#2A2924] bg-[#161513] p-4 text-xs text-[#8A887F]">
+            {JSON.stringify(weeklyResult, null, 2)}
+          </pre>
+        )}
       </div>
     </div>
   );
