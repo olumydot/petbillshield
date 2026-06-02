@@ -1084,6 +1084,55 @@ async def email_welcome(email: str, name: str, plan_label: str,
     )
 
 
+async def _queue_welcome_email_once(
+    *,
+    session_id: str,
+    user_id: str,
+    plan_id: str,
+    user_doc: Optional[dict] = None,
+) -> bool:
+    """
+    Sends the welcome email at most once per Checkout Session.
+
+    Checkout success can be observed from either the client-side polling path
+    or the Stripe webhook path. We guard on the transaction row so both routes
+    can safely attempt to queue the email without double-sending it.
+    """
+    if not session_id or not user_id or not plan_id:
+        return False
+
+    if user_doc is None:
+        user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0}) or {}
+
+    email = (user_doc or {}).get("email", "")
+    if not email:
+        return False
+
+    marked = await db.payment_transactions.update_one(
+        {
+            "session_id": session_id,
+            "user_id": user_id,
+            "welcome_email_sent_at": {"$exists": False},
+        },
+        {
+            "$set": {
+                "welcome_email_sent_at": datetime.now(timezone.utc).isoformat(),
+            }
+        },
+    )
+    if not marked.modified_count:
+        return False
+
+    asyncio.create_task(email_welcome(
+        email=email,
+        name=(user_doc or {}).get("name", ""),
+        plan_label=(user_doc or {}).get("plan_label") or plan_id,
+        plan_id=plan_id,
+        expires_at=(user_doc or {}).get("entitlement_expires_at"),
+    ))
+    return True
+
+
 async def email_renewal_success(email: str, name: str, plan_label: str,
                                 plan_id: str, next_renewal: Optional[str]) -> None:
     plan = PLANS.get(plan_id) or {}
@@ -1391,6 +1440,13 @@ async def billing_status(session_id: str, user: User = Depends(get_current_user)
             tx["status"] = status or "complete"
             tx["entitled"] = True
             granted_now = True
+            refreshed_user = await db.users.find_one({"user_id": user.user_id}, {"_id": 0}) or {}
+            await _queue_welcome_email_once(
+                session_id=session_id,
+                user_id=user.user_id,
+                plan_id=tx["plan_id"],
+                user_doc=refreshed_user,
+            )
 
     except Exception as e:
         logger.warning(f"Stripe session retrieve failed: {e}")
@@ -1461,15 +1517,7 @@ async def stripe_webhook(request: Request):
                 stripe_customer_id=stripe_customer_id,
                 stripe_subscription_id=stripe_subscription_id,
             )
-            # Welcome email
             user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0}) or {}
-            asyncio.create_task(email_welcome(
-                email=user_doc.get("email", ""),
-                name=user_doc.get("name", ""),
-                plan_label=user_doc.get("plan_label") or plan_id,
-                plan_id=plan_id,
-                expires_at=user_doc.get("entitlement_expires_at"),
-            ))
 
             await db.payment_transactions.update_one(
                 {"session_id": session_id},
@@ -1483,6 +1531,12 @@ async def stripe_webhook(request: Request):
                         "updated_at": datetime.now(timezone.utc).isoformat(),
                     }
                 },
+            )
+            await _queue_welcome_email_once(
+                session_id=session_id,
+                user_id=user_id,
+                plan_id=plan_id,
+                user_doc=user_doc,
             )
 
     elif event_type == "customer.subscription.deleted":

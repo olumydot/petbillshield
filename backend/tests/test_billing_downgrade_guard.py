@@ -104,3 +104,9 @@ def test_source_contains_new_billing_safety_guards():
     assert 'pi_status != "succeeded"' in source
     assert "Reactivate it before changing plans" in source
     assert '"pending_downgrade_plan_id": ""' in source
+
+
+def test_checkout_success_paths_share_once_only_welcome_email_guard():
+    source = ROUTE_FILE.read_text()
+    assert "async def _queue_welcome_email_once(" in source
+    assert source.count("await _queue_welcome_email_once(") >= 2
