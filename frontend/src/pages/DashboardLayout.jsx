@@ -167,6 +167,7 @@ export default function DashboardLayout() {
 
   const bellTimerRef                          = useRef(null);
   const isPricingPage = location.pathname === "/dashboard/pricing";
+  const isCheckoutPage = location.pathname === "/dashboard/checkout";
 
   useEffect(() => {
     setMobileNavOpen(false);
@@ -424,17 +425,19 @@ export default function DashboardLayout() {
       <header className="glass-header sticky top-0 z-40">
         <div className="max-w-[1400px] mx-auto px-5 sm:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2.5 min-w-0">
-            <button
-              type="button"
-              onClick={() => setMobileNavOpen(true)}
-              className="lg:hidden inline-flex items-center gap-2 rounded-xl border border-[#3A4142] bg-[#1D2222] px-3 py-2 text-sm font-semibold text-[#EFE8DA] shadow-sm"
-              aria-label="Open dashboard menu"
-              aria-expanded={mobileNavOpen}
-              data-testid="mobile-dashboard-menu-btn"
-            >
-              <Menu size={17} />
-              Menu
-            </button>
+            {!isCheckoutPage && (
+              <button
+                type="button"
+                onClick={() => setMobileNavOpen(true)}
+                className="lg:hidden inline-flex items-center gap-2 rounded-xl border border-[#3A4142] bg-[#1D2222] px-3 py-2 text-sm font-semibold text-[#EFE8DA] shadow-sm"
+                aria-label="Open dashboard menu"
+                aria-expanded={mobileNavOpen}
+                data-testid="mobile-dashboard-menu-btn"
+              >
+                <Menu size={17} />
+                Menu
+              </button>
+            )}
             <Link
               to="/"
               className="flex items-center gap-2.5 group min-w-0"
@@ -521,7 +524,7 @@ export default function DashboardLayout() {
         </div>
       </header>
 
-      {mobileNavOpen && (
+      {mobileNavOpen && !isCheckoutPage && (
         <div className="fixed inset-0 z-[85] lg:hidden" role="dialog" aria-modal="true" aria-label="Dashboard menu">
           <div className="absolute inset-0 bg-[#2D2C28]/55 backdrop-blur-sm" onClick={() => setMobileNavOpen(false)} />
           <aside className="absolute left-0 top-0 h-full w-[min(88vw,360px)] overflow-y-auto border-r border-[#3A4142] bg-[#161B1B] text-[#D4CEC0] shadow-2xl">
@@ -620,9 +623,10 @@ export default function DashboardLayout() {
         </div>
       )}
 
-      <div className="max-w-[1400px] mx-auto px-5 sm:px-8 flex gap-6 py-8 items-start">
+      <div className={`mx-auto px-5 sm:px-8 flex gap-6 py-8 items-start ${isCheckoutPage ? "max-w-[1200px]" : "max-w-[1400px]"}`}>
 
         {/* ── Sidebar ── */}
+          {!isCheckoutPage && (
 	        <aside
 	          data-testid="dashboard-sidebar"
 	          className={`relative z-[120] shrink-0 transition-all duration-300 ease-in-out hidden lg:block ${
@@ -833,9 +837,10 @@ export default function DashboardLayout() {
             {!sidebarCollapsed && <SafetyDisclaimer compact />}
           </div>
         </aside>
+          )}
 
         {/* ── Main content — grows to fill all remaining space ── */}
-        <main className="flex-1 min-w-0" key={location.pathname}>
+        <main className={`min-w-0 ${isCheckoutPage ? "w-full" : "flex-1"}`} key={location.pathname}>
           <PaymentStatusWatcher onPaid={refreshBilling} />
           {shouldShowUpgradeNotice && (
             <div
@@ -892,7 +897,7 @@ export default function DashboardLayout() {
         </main>
       </div>
 
-      <FeedbackButton floating />
+      {!isCheckoutPage && <FeedbackButton floating />}
 
       {/* First-time onboarding — welcome modal */}
       {showWelcome && (

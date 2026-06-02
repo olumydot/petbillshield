@@ -298,13 +298,13 @@ export default function CheckoutPage() {
     : null;
 
   return (
-    <div className="fixed inset-0 z-40 bg-[#2D2C28]/35 backdrop-blur-sm overflow-y-auto">
-      <div className="min-h-screen flex items-center justify-center p-5">
-        <div className="w-full max-w-5xl overflow-hidden rounded-[28px] border border-[#E5E2D9] bg-[#FAF9F6] shadow-2xl">
+    <div className="w-full">
+      <div className="mx-auto w-full max-w-5xl">
+        <div className="w-full overflow-hidden rounded-[28px] border border-[#E5E2D9] bg-[#FAF9F6] shadow-2xl shadow-black/20">
           <div className="grid grid-cols-1 lg:grid-cols-2">
 
             {/* ── Left: plan info ─────────────────────────────────── */}
-            <section className="p-8 lg:p-10 border-b lg:border-b-0 lg:border-r border-[#E5E2D9]">
+            <section className="p-6 sm:p-8 lg:p-10 border-b lg:border-b-0 lg:border-r border-[#E5E2D9]">
               <Link
                 to="/dashboard/pricing"
                 className="inline-flex items-center gap-1.5 text-xs text-[#65635C] hover:text-[#2D2C28] transition-colors mb-8"
@@ -348,7 +348,7 @@ export default function CheckoutPage() {
             </section>
 
             {/* ── Right: payment form ──────────────────────────────── */}
-            <section className="p-8 lg:p-10 bg-white/45">
+            <section className="p-6 sm:p-8 lg:p-10 bg-white/45">
               <div className="flex items-baseline gap-2 mb-6">
                 <span className="font-serif-display text-5xl text-[#D26D53]">
                   {plan.price.split("/")[0]}
@@ -387,7 +387,7 @@ export default function CheckoutPage() {
             </section>
           </div>
 
-          <footer className="border-t border-[#E5E2D9] px-8 py-4 grid grid-cols-3 gap-3 text-xs text-[#65635C]">
+          <footer className="border-t border-[#E5E2D9] px-6 sm:px-8 py-4 grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3 text-xs text-[#65635C] text-center sm:text-left">
             <span>Secure &amp; encrypted</span>
             <span>Cancel anytime</span>
             <span>Your data stays private</span>
