@@ -211,17 +211,10 @@ async def billing_create_checkout(
         stripe_sdk.api_key = STRIPE_API_KEY
         stripe_sdk.api_base = "https://api.stripe.com"
 
-        if not stripe_customer_id:
-            customer = await asyncio.to_thread(
-                stripe_sdk.Customer.create,
-                email=user.email,
-                metadata={"user_id": user.user_id},
-            )
-            stripe_customer_id = customer.id
-            await db.users.update_one(
-                {"user_id": user.user_id},
-                {"$set": {"stripe_customer_id": stripe_customer_id}},
-            )
+        stripe_customer_id = await _get_or_create_stripe_customer(
+            user,
+            stripe_customer_id,
+        )
 
         # Build session kwargs — optionally apply a promo/coupon code
         sess_kwargs: dict = dict(
@@ -361,21 +354,14 @@ async def billing_create_subscription(
 
     # ── Get or create Stripe Customer ──────────────────────────────────────
     stripe_customer_id = caller_doc.get("stripe_customer_id")
-    if not stripe_customer_id:
-        try:
-            customer = await asyncio.to_thread(
-                stripe_sdk.Customer.create,
-                email=user.email,
-                metadata={"user_id": user.user_id},
-            )
-            stripe_customer_id = customer.id
-            await db.users.update_one(
-                {"user_id": user.user_id},
-                {"$set": {"stripe_customer_id": stripe_customer_id}},
-            )
-        except Exception as e:
-            logger.exception(f"Stripe Customer.create failed: {e}")
-            raise HTTPException(status_code=502, detail="Could not create Stripe customer.")
+    try:
+        stripe_customer_id = await _get_or_create_stripe_customer(
+            user,
+            stripe_customer_id,
+        )
+    except Exception as e:
+        logger.exception(f"Stripe Customer.create failed: {e}")
+        raise HTTPException(status_code=502, detail="Could not create Stripe customer.")
 
     # ── Create Subscription (incomplete — confirmed by frontend) ───────────
     # NOTE: Stripe SDK ≥ v15 (API 2025-03-31) removed invoice.payment_intent.
@@ -924,6 +910,38 @@ async def _clear_stale_missing_subscription(user_id: str, subscription_id: Optio
     )
 
 
+async def _clear_stale_missing_customer(user_id: str, customer_id: Optional[str] = None):
+    """
+    Clears locally stored Stripe customer state when Stripe reports that the
+    customer no longer exists. This can happen when moving from test to live
+    mode because test customers are not available to the live API.
+    """
+    if not user_id:
+        return
+
+    logger.info(
+        f"billing self-heal: clearing stale Stripe customer state for "
+        f"user {user_id} customer {customer_id or 'unknown'}"
+    )
+
+    await db.users.update_one(
+        {"user_id": user_id},
+        {
+            "$unset": {
+                "stripe_customer_id": "",
+                "stripe_subscription_id": "",
+                "subscription_status": "",
+                "pending_plan_id": "",
+                "cancel_at_period_end": "",
+                "cancel_at": "",
+                "pending_downgrade_plan_id": "",
+                "pending_downgrade_label": "",
+                "pending_downgrade_at": "",
+            }
+        },
+    )
+
+
 def _is_missing_subscription_error(exc: Exception) -> bool:
     message = str(exc).lower()
     return (
@@ -931,6 +949,50 @@ def _is_missing_subscription_error(exc: Exception) -> bool:
         or "resource_missing" in message
         or "invalid_request_error" in message and "subscription" in message
     )
+
+
+def _is_missing_customer_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return (
+        "no such customer" in message
+        or ("resource_missing" in message and "customer" in message)
+        or ("invalid_request_error" in message and "customer" in message)
+    )
+
+
+async def _get_or_create_stripe_customer(user: User, existing_customer_id: Optional[str] = None) -> str:
+    """
+    Returns a valid Stripe customer ID for the current Stripe environment.
+
+    Local users can retain test-mode customer IDs after switching to live mode.
+    We verify the saved customer before reuse and create a fresh one when Stripe
+    says it does not exist.
+    """
+    stripe_sdk.api_key = STRIPE_API_KEY
+    stripe_sdk.api_base = "https://api.stripe.com"
+
+    if existing_customer_id:
+        try:
+            existing = await asyncio.to_thread(stripe_sdk.Customer.retrieve, existing_customer_id)
+            if stripe_value(existing, "deleted", False):
+                await _clear_stale_missing_customer(user.user_id, existing_customer_id)
+            else:
+                return existing_customer_id
+        except Exception as e:
+            if not _is_missing_customer_error(e):
+                raise
+            await _clear_stale_missing_customer(user.user_id, existing_customer_id)
+
+    customer = await asyncio.to_thread(
+        stripe_sdk.Customer.create,
+        email=user.email,
+        metadata={"user_id": user.user_id},
+    )
+    await db.users.update_one(
+        {"user_id": user.user_id},
+        {"$set": {"stripe_customer_id": customer.id}},
+    )
+    return customer.id
 
 
 async def _resume_incomplete_subscription(doc: dict, requested_plan_id: str) -> Optional[dict]:
@@ -2049,21 +2111,14 @@ async def billing_setup_intent(user: User = Depends(get_current_user)):
     doc = await db.users.find_one({"user_id": user.user_id}, {"_id": 0}) or {}
     stripe_customer_id = doc.get("stripe_customer_id")
 
-    if not stripe_customer_id:
-        try:
-            customer = await asyncio.to_thread(
-                stripe_sdk.Customer.create,
-                email=user.email,
-                metadata={"user_id": user.user_id},
-            )
-            stripe_customer_id = customer.id
-            await db.users.update_one(
-                {"user_id": user.user_id},
-                {"$set": {"stripe_customer_id": stripe_customer_id}},
-            )
-        except Exception as e:
-            logger.exception(f"Customer.create failed in setup-intent: {e}")
-            raise HTTPException(status_code=502, detail="Could not create Stripe customer.")
+    try:
+        stripe_customer_id = await _get_or_create_stripe_customer(
+            user,
+            stripe_customer_id,
+        )
+    except Exception as e:
+        logger.exception(f"Customer.create failed in setup-intent: {e}")
+        raise HTTPException(status_code=502, detail="Could not create Stripe customer.")
 
     try:
         si = await asyncio.to_thread(
@@ -2199,30 +2254,40 @@ async def billing_portal(http_request: Request, user: User = Depends(get_current
             detail="Customer Portal requires a real Stripe key. Set STRIPE_API_KEY to a live/test key in production.",
         )
 
+    doc = await db.users.find_one({"user_id": user.user_id}, {"_id": 0}) or {}
+
     # Use the user's existing Stripe customer (created at the most recent paid subscription)
     last_tx = await db.payment_transactions.find_one(
         {"user_id": user.user_id, "payment_status": "paid"},
         {"_id": 0},
         sort=[("updated_at", -1)],
     )
-    stripe_customer_id = None
+    stripe_customer_id = doc.get("stripe_customer_id")
     if last_tx:
-        stripe_customer_id = last_tx.get("stripe_customer_id")
+        stripe_customer_id = stripe_customer_id or last_tx.get("stripe_customer_id")
 
-    # Fallback: look up by email
-    if not stripe_customer_id:
-        try:
-            stripe_sdk.api_key = STRIPE_API_KEY
-            stripe_sdk.api_base = "https://api.stripe.com"
+    try:
+        stripe_sdk.api_key = STRIPE_API_KEY
+        stripe_sdk.api_base = "https://api.stripe.com"
+
+        if stripe_customer_id:
+            stripe_customer_id = await _get_or_create_stripe_customer(
+                user,
+                stripe_customer_id,
+            )
+        else:
             existing = await asyncio.to_thread(stripe_sdk.Customer.list, email=user.email, limit=1)
             if existing.data:
                 stripe_customer_id = existing.data[0].id
+                await db.users.update_one(
+                    {"user_id": user.user_id},
+                    {"$set": {"stripe_customer_id": stripe_customer_id}},
+                )
             else:
-                new_cust = await asyncio.to_thread(stripe_sdk.Customer.create, email=user.email, name=user.name)
-                stripe_customer_id = new_cust.id
-        except Exception as e:
-            logger.warning(f"Stripe customer lookup failed: {e}")
-            raise HTTPException(status_code=502, detail="Could not reach Stripe to open the portal")
+                stripe_customer_id = await _get_or_create_stripe_customer(user)
+    except Exception as e:
+        logger.warning(f"Stripe customer lookup failed: {e}")
+        raise HTTPException(status_code=502, detail="Could not reach Stripe to open the portal")
 
     origin = (http_request.headers.get("origin") or "").rstrip("/") or str(http_request.base_url).rstrip("/")
     return_url = f"{origin}/dashboard/pricing"
