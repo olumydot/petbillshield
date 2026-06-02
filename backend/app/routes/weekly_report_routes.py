@@ -4,7 +4,9 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any, Optional
 from zoneinfo import ZoneInfo
+import asyncio
 import json
+import os
 import uuid
 
 from fastapi import APIRouter, Depends, Query
@@ -27,6 +29,11 @@ from app.shared import (
 router = APIRouter()
 
 WEEKLY_REPORT_TIMEZONE = "America/Chicago"
+WEEKLY_REPORT_PREP_BATCH_SIZE = max(1, int(os.environ.get("WEEKLY_REPORT_PREP_BATCH_SIZE", "500")))
+WEEKLY_REPORT_PREP_CONCURRENCY = max(1, int(os.environ.get("WEEKLY_REPORT_PREP_CONCURRENCY", "10")))
+WEEKLY_REPORT_SEND_BATCH_SIZE = max(1, int(os.environ.get("WEEKLY_REPORT_SEND_BATCH_SIZE", "1000")))
+WEEKLY_REPORT_SEND_CONCURRENCY = max(1, int(os.environ.get("WEEKLY_REPORT_SEND_CONCURRENCY", "20")))
+WEEKLY_REPORT_AI_MIN_ACTIVITY_SCORE = max(0, int(os.environ.get("WEEKLY_REPORT_AI_MIN_ACTIVITY_SCORE", "3")))
 
 WEEKLY_REPORT_SYSTEM_PROMPT = """
 You are PetBill Shield.
@@ -130,6 +137,32 @@ def _score_pet_snapshot(snapshot: dict) -> int:
         + snapshot.get("recent_estimate_count", 0) * 2
         + snapshot.get("recent_claim_count", 0) * 2
     )
+
+
+def _account_activity_score(context: dict) -> int:
+    stats = context["account_stats"]
+    return (
+        min(stats.get("total_pets", 0), 5)
+        + stats.get("recent_activity_count", 0)
+        + (stats.get("overdue_reminders", 0) * 3)
+        + (stats.get("upcoming_next_7_days", 0) * 2)
+    )
+
+
+def _should_generate_with_ai(context: dict) -> bool:
+    return _account_activity_score(context) >= WEEKLY_REPORT_AI_MIN_ACTIVITY_SCORE
+
+
+def _current_local_now() -> datetime:
+    return datetime.now(ZoneInfo(WEEKLY_REPORT_TIMEZONE))
+
+
+def _scheduled_send_local(local_now: datetime) -> datetime:
+    return local_now.replace(hour=20, minute=0, second=0, microsecond=0)
+
+
+def _scheduled_send_utc_iso(local_now: datetime) -> str:
+    return _scheduled_send_local(local_now).astimezone(timezone.utc).isoformat()
 
 
 def _normalize_report_payload(payload: dict, context: dict) -> dict:
@@ -522,6 +555,9 @@ async def _build_account_context(user_doc: dict, now_utc: datetime) -> dict:
 
 
 async def _generate_weekly_report_payload(context: dict) -> dict:
+    if not _should_generate_with_ai(context):
+        return _fallback_report_payload(context)
+
     prompt = f"""
 Account owner: {context['user_name']}
 Plan: {context['plan_label']}
@@ -553,69 +589,15 @@ Write this week's account report now.
         return _fallback_report_payload(context)
 
 
-async def _send_weekly_report_for_user(
-    user_doc: dict,
-    local_now: datetime,
-    force: bool = False,
-) -> dict:
-    now_utc = datetime.now(timezone.utc)
-    user_id = user_doc["user_id"]
-    email = (user_doc.get("email") or "").strip()
-    week_key = _week_key(local_now)
-
-    if not email:
-        return {"status": "skipped", "reason": "missing_email"}
-
-    if not _user_is_paid(user_doc, now_utc):
-        return {"status": "skipped", "reason": "not_paid"}
-
-    if not _weekly_reports_enabled(user_doc):
-        return {"status": "skipped", "reason": "pref_disabled"}
-
-    existing = await db.weekly_account_reports.find_one(
-        {"user_id": user_id, "week_key": week_key},
-        {"_id": 0, "report_id": 1},
-    )
-    if existing and not force:
-        return {"status": "skipped", "reason": "already_sent"}
-
-    context = await _build_account_context(user_doc, now_utc)
-    report = await _generate_weekly_report_payload(context)
-    html = _build_weekly_report_email_html(report, context)
-
-    await send_resend_email(
-        to=email,
-        subject=report.get("subject_line") or "Your weekly PetBill Shield report",
-        html=html,
-    )
-
-    doc = {
-        "report_id": f"wrp_{uuid.uuid4().hex[:12]}",
-        "user_id": user_id,
-        "email": email,
-        "plan_id": user_doc.get("plan_id"),
-        "week_key": week_key,
-        "timezone": WEEKLY_REPORT_TIMEZONE,
-        "report": report,
-        "context_stats": context["account_stats"],
-        "created_at": now_utc.isoformat(),
-        "sent_at": now_utc.isoformat(),
-    }
-
-    await db.weekly_account_reports.update_one(
-        {"user_id": user_id, "week_key": week_key},
-        {"$set": doc},
-        upsert=True,
-    )
-    return {"status": "sent", "reason": "ok", "email": email}
-
-
-async def dispatch_weekly_account_reports(
+async def enqueue_weekly_account_reports(
     *,
     target_email: Optional[str] = None,
     force: bool = False,
 ) -> dict:
-    local_now = datetime.now(ZoneInfo(WEEKLY_REPORT_TIMEZONE))
+    local_now = _current_local_now()
+    now_utc = datetime.now(timezone.utc)
+    week_key = _week_key(local_now)
+    scheduled_send_at = _scheduled_send_utc_iso(local_now)
     query: dict[str, Any] = {"plan_id": {"$nin": ["free", "free_tier", None, ""]}}
     if target_email:
         query["email"] = target_email.strip().lower()
@@ -631,43 +613,332 @@ async def dispatch_weekly_account_reports(
         "prefs": 1,
     }
 
-    processed = sent = skipped = failed = 0
+    processed = created = updated = skipped = 0
     cursor = db.users.find(query, projection)
     async for user_doc in cursor:
         processed += 1
-        try:
-            result = await _send_weekly_report_for_user(user_doc, local_now, force=force)
-            if result["status"] == "sent":
-                sent += 1
-            else:
-                skipped += 1
-        except Exception as exc:
-            failed += 1
-            logger.warning(f"weekly report dispatch failed for {user_doc.get('email')}: {exc}")
+        user_id = user_doc["user_id"]
+        existing = await db.weekly_report_jobs.find_one(
+            {"user_id": user_id, "week_key": week_key},
+            {"_id": 0, "status": 1},
+        )
+        if existing and existing.get("status") in {"queued", "prepared", "sent"} and not force:
+            skipped += 1
+            continue
+
+        job_doc = {
+            "job_id": f"wrj_{uuid.uuid4().hex[:12]}",
+            "user_id": user_id,
+            "email": (user_doc.get("email") or "").strip().lower(),
+            "plan_id": user_doc.get("plan_id"),
+            "week_key": week_key,
+            "timezone": WEEKLY_REPORT_TIMEZONE,
+            "scheduled_send_at": scheduled_send_at,
+            "status": "queued",
+            "created_at": now_utc.isoformat(),
+            "updated_at": now_utc.isoformat(),
+            "generation_attempts": 0,
+            "send_attempts": 0,
+            "last_error": None,
+            "report": None,
+            "context_stats": None,
+            "generation_mode": None,
+        }
+        await db.weekly_report_jobs.update_one(
+            {"user_id": user_id, "week_key": week_key},
+            {"$set": job_doc},
+            upsert=True,
+        )
+        if existing:
+            updated += 1
+        else:
+            created += 1
 
     summary = {
         "ok": True,
-        "week_key": _week_key(local_now),
+        "week_key": week_key,
         "timezone": WEEKLY_REPORT_TIMEZONE,
         "processed": processed,
-        "sent": sent,
+        "queued_created": created,
+        "queued_updated": updated,
         "skipped": skipped,
-        "failed": failed,
         "forced": force,
         "target_email": target_email,
     }
-    logger.info(f"weekly account reports complete: {summary}")
+    logger.info(f"weekly account report enqueue complete: {summary}")
     return summary
+
+
+async def _prepare_weekly_report_job(job: dict, local_now: datetime, force: bool = False) -> dict:
+    now_utc = datetime.now(timezone.utc)
+    user_id = job["user_id"]
+    user_doc = await db.users.find_one(
+        {"user_id": user_id},
+        {"_id": 0, "user_id": 1, "email": 1, "name": 1, "first_name": 1, "plan_id": 1, "entitlement_expires_at": 1, "prefs": 1},
+    ) or {}
+
+    if not user_doc:
+        await db.weekly_report_jobs.update_one(
+            {"job_id": job["job_id"]},
+            {"$set": {"status": "skipped", "last_error": "user_not_found", "updated_at": now_utc.isoformat()}},
+        )
+        return {"status": "skipped", "reason": "user_not_found"}
+
+    if not _user_is_paid(user_doc, now_utc):
+        await db.weekly_report_jobs.update_one(
+            {"job_id": job["job_id"]},
+            {"$set": {"status": "skipped", "last_error": "not_paid", "updated_at": now_utc.isoformat()}},
+        )
+        return {"status": "skipped", "reason": "not_paid"}
+
+    if not _weekly_reports_enabled(user_doc):
+        await db.weekly_report_jobs.update_one(
+            {"job_id": job["job_id"]},
+            {"$set": {"status": "skipped", "last_error": "pref_disabled", "updated_at": now_utc.isoformat()}},
+        )
+        return {"status": "skipped", "reason": "pref_disabled"}
+
+    if not force:
+        existing_sent = await db.weekly_account_reports.find_one(
+            {"user_id": user_id, "week_key": job["week_key"]},
+            {"_id": 0, "report_id": 1},
+        )
+        if existing_sent:
+            await db.weekly_report_jobs.update_one(
+                {"job_id": job["job_id"]},
+                {"$set": {"status": "sent", "updated_at": now_utc.isoformat(), "last_error": None}},
+            )
+            return {"status": "skipped", "reason": "already_sent"}
+
+    context = await _build_account_context(user_doc, now_utc)
+    report = await _generate_weekly_report_payload(context)
+    generation_mode = "ai" if _should_generate_with_ai(context) else "fallback"
+
+    await db.weekly_report_jobs.update_one(
+        {"job_id": job["job_id"]},
+        {
+            "$set": {
+                "status": "prepared",
+                "email": (user_doc.get("email") or "").strip().lower(),
+                "plan_id": user_doc.get("plan_id"),
+                "report": report,
+                "context_stats": context["account_stats"],
+                "generation_mode": generation_mode,
+                "prepared_at": now_utc.isoformat(),
+                "updated_at": now_utc.isoformat(),
+                "last_error": None,
+            },
+            "$inc": {"generation_attempts": 1},
+        },
+    )
+    return {"status": "prepared", "reason": generation_mode}
+
+
+async def prepare_weekly_account_report_batch(
+    *,
+    target_email: Optional[str] = None,
+    force: bool = False,
+    limit: int = WEEKLY_REPORT_PREP_BATCH_SIZE,
+) -> dict:
+    local_now = _current_local_now()
+    week_key = _week_key(local_now)
+    query: dict[str, Any] = {
+        "week_key": week_key,
+        "status": {"$in": ["queued", "failed_prepare"]},
+    }
+    if target_email:
+        query["email"] = target_email.strip().lower()
+
+    jobs = await db.weekly_report_jobs.find(query, {"_id": 0}).sort("created_at", 1).to_list(limit)
+    if not jobs:
+        return {"ok": True, "week_key": week_key, "processed": 0, "prepared": 0, "skipped": 0, "failed": 0}
+
+    semaphore = asyncio.Semaphore(WEEKLY_REPORT_PREP_CONCURRENCY)
+
+    async def _runner(job: dict):
+        async with semaphore:
+            try:
+                return await _prepare_weekly_report_job(job, local_now, force=force)
+            except Exception as exc:
+                await db.weekly_report_jobs.update_one(
+                    {"job_id": job["job_id"]},
+                    {
+                        "$set": {
+                            "status": "failed_prepare",
+                            "last_error": str(exc)[:500],
+                            "updated_at": datetime.now(timezone.utc).isoformat(),
+                        },
+                        "$inc": {"generation_attempts": 1},
+                    },
+                )
+                return {"status": "failed", "reason": str(exc)}
+
+    results = await asyncio.gather(*(_runner(job) for job in jobs))
+    prepared = sum(1 for r in results if r.get("status") == "prepared")
+    skipped = sum(1 for r in results if r.get("status") == "skipped")
+    failed = sum(1 for r in results if r.get("status") == "failed")
+    summary = {
+        "ok": True,
+        "week_key": week_key,
+        "processed": len(jobs),
+        "prepared": prepared,
+        "skipped": skipped,
+        "failed": failed,
+        "target_email": target_email,
+    }
+    logger.info(f"weekly account report prepare batch complete: {summary}")
+    return summary
+
+
+async def _send_prepared_weekly_report_job(job: dict, local_now: datetime) -> dict:
+    now_utc = datetime.now(timezone.utc)
+    email = (job.get("email") or "").strip()
+    if not email:
+        await db.weekly_report_jobs.update_one(
+            {"job_id": job["job_id"]},
+            {"$set": {"status": "failed_send", "last_error": "missing_email", "updated_at": now_utc.isoformat()}},
+        )
+        return {"status": "failed", "reason": "missing_email"}
+
+    report = job.get("report") or {}
+    context = {"account_stats": job.get("context_stats") or {}, "detailed_pets": []}
+    html = _build_weekly_report_email_html(report, context)
+    await send_resend_email(
+        to=email,
+        subject=report.get("subject_line") or "Your weekly PetBill Shield report",
+        html=html,
+    )
+
+    report_doc = {
+        "report_id": f"wrp_{uuid.uuid4().hex[:12]}",
+        "user_id": job["user_id"],
+        "email": email,
+        "plan_id": job.get("plan_id"),
+        "week_key": job["week_key"],
+        "timezone": WEEKLY_REPORT_TIMEZONE,
+        "report": report,
+        "context_stats": job.get("context_stats"),
+        "created_at": job.get("prepared_at") or now_utc.isoformat(),
+        "sent_at": now_utc.isoformat(),
+        "generation_mode": job.get("generation_mode"),
+    }
+    await db.weekly_account_reports.update_one(
+        {"user_id": job["user_id"], "week_key": job["week_key"]},
+        {"$set": report_doc},
+        upsert=True,
+    )
+    await db.weekly_report_jobs.update_one(
+        {"job_id": job["job_id"]},
+        {
+            "$set": {
+                "status": "sent",
+                "sent_at": now_utc.isoformat(),
+                "updated_at": now_utc.isoformat(),
+                "last_error": None,
+            },
+            "$inc": {"send_attempts": 1},
+        },
+    )
+    return {"status": "sent", "reason": "ok"}
+
+
+async def send_due_weekly_account_reports(
+    *,
+    target_email: Optional[str] = None,
+    force: bool = False,
+    immediate: bool = False,
+    limit: int = WEEKLY_REPORT_SEND_BATCH_SIZE,
+) -> dict:
+    local_now = _current_local_now()
+    now_utc = datetime.now(timezone.utc)
+    week_key = _week_key(local_now)
+    query: dict[str, Any] = {
+        "week_key": week_key,
+        "status": {"$in": ["prepared", "failed_send"]},
+    }
+    if not immediate:
+        query["scheduled_send_at"] = {"$lte": now_utc.isoformat()}
+    if target_email:
+        query["email"] = target_email.strip().lower()
+
+    jobs = await db.weekly_report_jobs.find(query, {"_id": 0}).sort("prepared_at", 1).to_list(limit)
+    if not jobs:
+        return {"ok": True, "week_key": week_key, "processed": 0, "sent": 0, "failed": 0, "skipped": 0}
+
+    semaphore = asyncio.Semaphore(WEEKLY_REPORT_SEND_CONCURRENCY)
+
+    async def _runner(job: dict):
+        async with semaphore:
+            try:
+                return await _send_prepared_weekly_report_job(job, local_now)
+            except Exception as exc:
+                await db.weekly_report_jobs.update_one(
+                    {"job_id": job["job_id"]},
+                    {
+                        "$set": {
+                            "status": "failed_send",
+                            "last_error": str(exc)[:500],
+                            "updated_at": datetime.now(timezone.utc).isoformat(),
+                        },
+                        "$inc": {"send_attempts": 1},
+                    },
+                )
+                return {"status": "failed", "reason": str(exc)}
+
+    results = await asyncio.gather(*(_runner(job) for job in jobs))
+    sent = sum(1 for r in results if r.get("status") == "sent")
+    failed = sum(1 for r in results if r.get("status") == "failed")
+    skipped = sum(1 for r in results if r.get("status") == "skipped")
+    summary = {
+        "ok": True,
+        "week_key": week_key,
+        "processed": len(jobs),
+        "sent": sent,
+        "failed": failed,
+        "skipped": skipped,
+        "target_email": target_email,
+        "immediate": immediate,
+        "forced": force,
+    }
+    logger.info(f"weekly account report send batch complete: {summary}")
+    return summary
+
+
+async def dispatch_weekly_account_reports(
+    *,
+    target_email: Optional[str] = None,
+    force: bool = False,
+) -> dict:
+    enqueue = await enqueue_weekly_account_reports(target_email=target_email, force=force)
+    prepare = await prepare_weekly_account_report_batch(
+        target_email=target_email,
+        force=force,
+        limit=1 if target_email else min(WEEKLY_REPORT_PREP_BATCH_SIZE, 50),
+    )
+    send = await send_due_weekly_account_reports(
+        target_email=target_email,
+        force=force,
+        immediate=True,
+        limit=1 if target_email else min(WEEKLY_REPORT_SEND_BATCH_SIZE, 50),
+    )
+    return {"ok": True, "enqueue": enqueue, "prepare": prepare, "send": send}
 
 
 @router.post("/admin/weekly-reports/dispatch-now")
 async def admin_dispatch_weekly_reports_now(
     target_email: Optional[EmailStr] = Query(default=None),
     force: bool = Query(default=False),
+    immediate: bool = Query(default=False),
     user: User = Depends(require_admin),
 ):
     _ = user
-    return await dispatch_weekly_account_reports(
-        target_email=str(target_email) if target_email else None,
+    target = str(target_email) if target_email else None
+    if immediate:
+        return await dispatch_weekly_account_reports(
+            target_email=target,
+            force=force,
+        )
+    return await enqueue_weekly_account_reports(
+        target_email=target,
         force=force,
     )

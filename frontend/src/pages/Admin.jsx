@@ -3,6 +3,7 @@ import { Navigate } from "react-router-dom";
 import api from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { Loader2, ShieldAlert, Star, Mail, Bell, CreditCard, MessageSquareHeart, Users, PawPrint, FileSearch } from "lucide-react";
+import { toast } from "react-hot-toast";
 
 export default function Admin() {
   const { user } = useAuth();
@@ -12,6 +13,9 @@ export default function Admin() {
   const [feedback, setFeedback] = useState([]);
   const [contact, setContact] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [weeklyEmail, setWeeklyEmail] = useState("");
+  const [weeklySending, setWeeklySending] = useState(false);
+  const [weeklyResult, setWeeklyResult] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -20,6 +24,12 @@ export default function Admin() {
       .catch(() => { if (!cancelled) setAllowed(false); });
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    if (user?.email && !weeklyEmail) {
+      setWeeklyEmail(user.email);
+    }
+  }, [user, weeklyEmail]);
 
   useEffect(() => {
     if (!allowed) return;
@@ -43,6 +53,24 @@ export default function Admin() {
       </div>
     );
   }
+
+  const sendWeeklyTest = async () => {
+    if (!weeklyEmail.trim()) {
+      toast.error("Enter an email address first.");
+      return;
+    }
+    setWeeklySending(true);
+    setWeeklyResult(null);
+    try {
+      const { data } = await api.post(`/admin/weekly-reports/dispatch-now?target_email=${encodeURIComponent(weeklyEmail.trim())}&force=true&immediate=true`);
+      setWeeklyResult(data);
+      toast.success("Weekly report test triggered.");
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Couldn't trigger weekly report test.");
+    } finally {
+      setWeeklySending(false);
+    }
+  };
 
   return (
     <div className="space-y-6" data-testid="admin-page">
@@ -122,6 +150,38 @@ export default function Admin() {
                 <Row k="Delivered" v={metrics.contact_messages?.delivered}/>
               </div>
             </div>
+          </div>
+          <div className="cream-card p-5">
+            <div className="eyebrow text-[#556045] mb-2 inline-flex items-center gap-1.5"><Mail size={13}/> Weekly report test</div>
+            <p className="text-sm text-[#65635C] max-w-2xl">
+              This sends one immediate weekly AI account report using the new scaled pipeline for the email you choose.
+              It is meant for admin testing and respects the same paid-plan logic.
+            </p>
+            <div className="mt-4 flex flex-col md:flex-row gap-3 md:items-end">
+              <label className="flex-1">
+                <div className="text-xs text-[#65635C] mb-1">Target email</div>
+                <input
+                  type="email"
+                  value={weeklyEmail}
+                  onChange={(e) => setWeeklyEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  className="w-full rounded-xl border border-[#E5E2D9] bg-white px-4 py-3 text-sm text-[#2D2C28] outline-none focus:border-[#D26D53]"
+                />
+              </label>
+              <button
+                onClick={sendWeeklyTest}
+                disabled={weeklySending}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#2D2C28] px-4 py-3 text-sm font-semibold text-[#FAF9F6] disabled:opacity-60"
+              >
+                {weeklySending ? <Loader2 size={15} className="animate-spin" /> : <Mail size={15} />}
+                Send test report
+              </button>
+            </div>
+            {weeklyResult && (
+              <pre className="mt-4 rounded-2xl bg-[#F8F5EE] border border-[#E5E2D9] p-4 text-xs text-[#65635C] overflow-x-auto whitespace-pre-wrap">
+                {JSON.stringify(weeklyResult, null, 2)}
+              </pre>
+            )}
           </div>
         </div>
       )}

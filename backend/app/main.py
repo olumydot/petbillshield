@@ -24,7 +24,9 @@ from app.routes.content_routes import router as content_router
 from app.routes.admin_portal_routes import router as admin_portal_router
 from app.routes.weekly_report_routes import (
     router as weekly_report_router,
-    dispatch_weekly_account_reports,
+    enqueue_weekly_account_reports,
+    prepare_weekly_account_report_batch,
+    send_due_weekly_account_reports,
 )
 
 
@@ -196,6 +198,9 @@ async def startup_scheduler():
     await db.downgrade_notices.create_index([("notice_id", 1)], unique=True)
     await db.weekly_account_reports.create_index([("user_id", 1), ("week_key", 1)], unique=True)
     await db.weekly_account_reports.create_index([("sent_at", -1)])
+    await db.weekly_report_jobs.create_index([("user_id", 1), ("week_key", 1)], unique=True)
+    await db.weekly_report_jobs.create_index([("week_key", 1), ("status", 1), ("scheduled_send_at", 1)])
+    await db.weekly_report_jobs.create_index([("created_at", -1)])
     # Security indices
     await db.user_sessions.create_index([("token_hash", 1)], unique=True, sparse=True)
     await db.login_attempts.create_index([("email", 1), ("created_at", -1)])
@@ -227,13 +232,35 @@ async def startup_scheduler():
             max_instances=1,
         )
         scheduler.add_job(
-            dispatch_weekly_account_reports,
+            enqueue_weekly_account_reports,
             "cron",
             day_of_week="sun",
-            hour=20,
+            hour="12-19",
             minute=0,
             timezone="America/Chicago",
-            id="weekly_account_reports",
+            id="weekly_account_reports_enqueue",
+            coalesce=True,
+            max_instances=1,
+        )
+        scheduler.add_job(
+            prepare_weekly_account_report_batch,
+            "cron",
+            day_of_week="sun",
+            hour="12-23",
+            minute="*/5",
+            timezone="America/Chicago",
+            id="weekly_account_reports_prepare",
+            coalesce=True,
+            max_instances=1,
+        )
+        scheduler.add_job(
+            send_due_weekly_account_reports,
+            "cron",
+            day_of_week="sun",
+            hour="20-23",
+            minute="*/5",
+            timezone="America/Chicago",
+            id="weekly_account_reports_send",
             coalesce=True,
             max_instances=1,
         )
