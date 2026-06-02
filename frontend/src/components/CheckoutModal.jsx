@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useId } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { EmbeddedCheckout, EmbeddedCheckoutProvider } from "@stripe/react-stripe-js";
 import { loadStripe } from "@stripe/stripe-js/pure";
 import { X, ShieldCheck, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
@@ -27,6 +27,7 @@ export default function CheckoutModal({
   const [sessionId,    setSessionId]    = useState(null);
   const [clientSecret, setClientSecret] = useState(null);
   const [initError,    setInitError]    = useState("");
+  const [resumeUrl,    setResumeUrl]    = useState("");
   const [loading,      setLoading]      = useState(false);
   const [completed,    setCompleted]    = useState(false);
   const [activating,   setActivating]   = useState(false);
@@ -58,6 +59,7 @@ export default function CheckoutModal({
     setClientSecret(null);
     setSessionId(null);
     setInitError("");
+    setResumeUrl("");
     setCompleted(false);
     setActivating(false);
     setLoading(true);
@@ -74,8 +76,12 @@ export default function CheckoutModal({
       })
       .catch((e) => {
         didFetchRef.current = false; // allow retry on error
+        const detail = e?.response?.data?.detail;
+        const message = typeof detail === "string" ? detail : detail?.message;
+        const nextResumeUrl = typeof detail === "object" ? detail?.resume_url : "";
+        setResumeUrl(nextResumeUrl || "");
         setInitError(
-          e?.response?.data?.detail ||
+          message ||
             "Could not initialise checkout. Please try again."
         );
       })
@@ -191,7 +197,17 @@ export default function CheckoutModal({
           {!loading && initError && (
             <div className="rounded-xl bg-[#FEF0EE] border border-[#F2C5B7] p-4 flex items-start gap-3">
               <AlertCircle size={16} className="text-[#D26D53] shrink-0 mt-0.5" />
-              <p className="text-sm text-[#8C2D14]">{initError}</p>
+              <div className="space-y-3">
+                <p className="text-sm text-[#8C2D14]">{initError}</p>
+                {resumeUrl && (
+                  <a
+                    href={resumeUrl}
+                    className="inline-flex items-center rounded-lg bg-[#2D2C28] px-3 py-2 text-sm font-semibold text-[#FAF9F6] hover:bg-[#3F3E39] transition-colors"
+                  >
+                    Continue existing checkout
+                  </a>
+                )}
+              </div>
             </div>
           )}
 

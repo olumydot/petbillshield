@@ -142,13 +142,22 @@ async def billing_create_checkout(
             detail=f"Stripe price ID is missing for {payload.plan_id}",
         )
 
+    origin = payload.origin_url.rstrip("/")
+
     # ── Guard: do not create duplicate or conflicting subscriptions ──
     caller_doc = await db.users.find_one({"user_id": user.user_id}, {"_id": 0}) or {}
     conflict_detail = _subscription_creation_conflict_detail(caller_doc)
     if conflict_detail:
+        if (caller_doc.get("subscription_status") or "").strip().lower() == "incomplete":
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": conflict_detail,
+                    "resume_url": f"{origin}/dashboard/checkout?plan={payload.plan_id}",
+                },
+            )
         raise HTTPException(status_code=409, detail=conflict_detail)
 
-    origin = payload.origin_url.rstrip("/")
     success_url = f"{origin}/dashboard/pricing?session_id={{CHECKOUT_SESSION_ID}}&plan={payload.plan_id}"
     cancel_url = f"{origin}/dashboard/pricing?canceled=1"
 
@@ -286,6 +295,10 @@ async def billing_create_subscription(
 
     # Guard: do not create duplicate or conflicting subscriptions
     caller_doc = await db.users.find_one({"user_id": user.user_id}, {"_id": 0}) or {}
+    resumed = await _resume_incomplete_subscription(caller_doc, payload.plan_id)
+    if resumed:
+        return resumed
+
     conflict_detail = _subscription_creation_conflict_detail(caller_doc)
     if conflict_detail:
         raise HTTPException(status_code=409, detail=conflict_detail)
@@ -387,6 +400,7 @@ async def billing_create_subscription(
     return {
         "client_secret":   client_secret,
         "subscription_id": subscription.id,
+        "payment_intent_id": payment_intent_id,
         "plan_id":         payload.plan_id,
     }
 
@@ -737,6 +751,131 @@ _BLOCKING_SUBSCRIPTION_STATUSES = {
     "unpaid",
     "incomplete",
 }
+
+
+async def _clear_local_incomplete_subscription(user_id: str):
+    """Drops locally tracked incomplete subscription state so checkout can restart cleanly."""
+    if not user_id:
+        return
+    await db.users.update_one(
+        {"user_id": user_id},
+        {
+            "$unset": {
+                "stripe_subscription_id": "",
+                "subscription_status": "",
+                "pending_plan_id": "",
+            }
+        },
+    )
+
+
+async def _resume_incomplete_subscription(doc: dict, requested_plan_id: str) -> Optional[dict]:
+    """
+    Reuses an existing incomplete Stripe subscription when possible.
+
+    If the tracked subscription is stale, missing, or belongs to a different
+    requested plan, we clear the local incomplete state and let checkout create
+    a fresh subscription instead.
+    """
+    subscription_id = doc.get("stripe_subscription_id")
+    if not subscription_id:
+        return None
+
+    local_status = (doc.get("subscription_status") or "").strip().lower()
+    if local_status != "incomplete":
+        return None
+
+    stripe_sdk.api_key = STRIPE_API_KEY
+    stripe_sdk.api_base = "https://api.stripe.com"
+
+    try:
+        subscription = await asyncio.to_thread(
+            stripe_sdk.Subscription.retrieve,
+            subscription_id,
+            expand=["latest_invoice.payments"],
+        )
+    except Exception as e:
+        logger.warning(
+            f"resume-incomplete: could not retrieve subscription {subscription_id}: {e}"
+        )
+        await _clear_local_incomplete_subscription(doc.get("user_id"))
+        return None
+
+    stripe_status = (stripe_value(subscription, "status", "") or "").strip().lower()
+    tracked_plan_id = doc.get("pending_plan_id") or doc.get("plan_id")
+
+    if stripe_status in {"canceled", "incomplete_expired"}:
+        await _clear_local_incomplete_subscription(doc.get("user_id"))
+        return None
+
+    # If the user chose a different plan than the stranded incomplete
+    # subscription, restart cleanly on the newly requested plan.
+    if requested_plan_id and tracked_plan_id and requested_plan_id != tracked_plan_id:
+        logger.info(
+            f"resume-incomplete: clearing mismatched incomplete subscription "
+            f"{subscription_id} for user {doc.get('user_id')} "
+            f"(tracked={tracked_plan_id}, requested={requested_plan_id})"
+        )
+        await _clear_local_incomplete_subscription(doc.get("user_id"))
+        return None
+
+    if stripe_status in {"active", "trialing"}:
+        healed_plan_id = tracked_plan_id or requested_plan_id
+        if healed_plan_id and healed_plan_id not in {"free", "free_tier"}:
+            await _grant_entitlement(
+                user_id=doc.get("user_id"),
+                plan_id=healed_plan_id,
+                stripe_customer_id=doc.get("stripe_customer_id"),
+                stripe_subscription_id=subscription_id,
+            )
+        await db.users.update_one(
+            {"user_id": doc.get("user_id")},
+            {
+                "$set": {"subscription_status": stripe_status},
+                "$unset": {"pending_plan_id": ""},
+            },
+        )
+        return {
+            "already_active": True,
+            "plan_id": healed_plan_id,
+            "subscription_id": subscription_id,
+        }
+
+    if stripe_status not in {"incomplete", "past_due", "unpaid"}:
+        await _clear_local_incomplete_subscription(doc.get("user_id"))
+        return None
+
+    try:
+        inv_data = subscription.latest_invoice._data
+        payments_list = inv_data["payments"]["data"]
+        payment_intent_id = payments_list[0]["payment"]["payment_intent"]
+        payment_intent = await asyncio.to_thread(
+            stripe_sdk.PaymentIntent.retrieve, payment_intent_id
+        )
+        client_secret = payment_intent.client_secret
+    except (KeyError, IndexError, AttributeError, TypeError, Exception) as e:
+        logger.warning(
+            f"resume-incomplete: could not extract payment details from {subscription_id}: {e}"
+        )
+        await _clear_local_incomplete_subscription(doc.get("user_id"))
+        return None
+
+    if requested_plan_id and requested_plan_id != tracked_plan_id:
+        tracked_plan_id = requested_plan_id
+
+    if tracked_plan_id:
+        await db.users.update_one(
+            {"user_id": doc.get("user_id")},
+            {"$set": {"pending_plan_id": tracked_plan_id}},
+        )
+
+    return {
+        "client_secret": client_secret,
+        "subscription_id": subscription_id,
+        "payment_intent_id": payment_intent_id,
+        "plan_id": tracked_plan_id or requested_plan_id,
+        "reused_existing": True,
+    }
 
 
 def _subscription_creation_conflict_detail(doc: dict) -> Optional[str]:

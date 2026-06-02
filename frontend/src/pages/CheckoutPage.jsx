@@ -142,10 +142,9 @@ const PLAN_DETAILS = {
 };
 
 // ── Inner form (must be inside <Elements>) ────────────────────────────────────
-function PaymentForm({ planId, planPrice, onSuccess }) {
+function PaymentForm({ planId, planPrice, subscriptionId, paymentIntentId, onSuccess }) {
   const stripe   = useStripe();
   const elements = useElements();
-  const navigate = useNavigate();
 
   const [confirming, setConfirming] = useState(false);
   const [errorMsg,   setErrorMsg]   = useState("");
@@ -189,8 +188,28 @@ function PaymentForm({ planId, planPrice, onSuccess }) {
       return;
     }
 
-    if (paymentIntent?.status === "succeeded" || paymentIntent?.status === "processing") {
+    const resolvedPaymentIntentId = paymentIntent?.id || paymentIntentId;
+
+    if (paymentIntent?.status === "succeeded" && resolvedPaymentIntentId && subscriptionId) {
       setSucceeded(true);
+      setPollMsg("Activating your plan…");
+      try {
+        const { data } = await api.post("/billing/confirm-payment", {
+          payment_intent_id: resolvedPaymentIntentId,
+          subscription_id: subscriptionId,
+        });
+        onSuccess(data);
+        return;
+      } catch {
+        setPollMsg("Payment confirmed. Finalizing your plan…");
+        pollUntilActive();
+        return;
+      }
+    }
+
+    if (paymentIntent?.status === "processing") {
+      setSucceeded(true);
+      setPollMsg("Payment is processing. We’ll activate your plan in just a moment.");
       pollUntilActive();
     } else {
       setErrorMsg("Unexpected status. Please contact support.");
@@ -251,18 +270,31 @@ export default function CheckoutPage() {
   const paymentStatus       = searchParams.get("payment_status");  // 3DS return
 
   const [clientSecret, setClientSecret] = useState(null);
+  const [subscriptionId, setSubscriptionId] = useState("");
+  const [paymentIntentId, setPaymentIntentId] = useState("");
   const [loading,      setLoading]      = useState(true);
   const [initError,    setInitError]    = useState("");
 
   // Fetch client_secret on mount (or when planId changes)
   useEffect(() => {
     setClientSecret(null);
+    setSubscriptionId("");
+    setPaymentIntentId("");
     setInitError("");
     setLoading(true);
 
     api
       .post("/billing/subscribe", { plan_id: planId })
-      .then(({ data }) => setClientSecret(data.client_secret))
+      .then(({ data }) => {
+        if (data?.already_active) {
+          refresh();
+          navigate("/dashboard/pricing?payment_status=success", { replace: true });
+          return;
+        }
+        setClientSecret(data.client_secret);
+        setSubscriptionId(data.subscription_id || "");
+        setPaymentIntentId(data.payment_intent_id || "");
+      })
       .catch((e) =>
         setInitError(
           e?.response?.data?.detail ||
@@ -270,7 +302,7 @@ export default function CheckoutPage() {
         )
       )
       .finally(() => setLoading(false));
-  }, [planId]);
+  }, [planId, navigate, refresh]);
 
   function handleSuccess() {
     refresh();
@@ -375,6 +407,8 @@ export default function CheckoutPage() {
                   <PaymentForm
                     planId={planId}
                     planPrice={plan.price}
+                    subscriptionId={subscriptionId}
+                    paymentIntentId={paymentIntentId}
                     onSuccess={handleSuccess}
                   />
                 </Elements>
