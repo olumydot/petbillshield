@@ -771,6 +771,11 @@ const PREF_ITEMS = [
     desc:  "Short, practical tips on understanding vet bills, managing pet care costs, and working with insurers.",
   },
   {
+    key:   "weekly_reports",
+    label: "Weekly AI account report",
+    desc:  "A personalized Sunday evening report for paid subscribers covering reminders, recent activity, pet-by-pet patterns, and suggested next steps.",
+  },
+  {
     key:   "offers",
     label: "Special offers & announcements",
     desc:  "Occasional emails about new features, promotions, and partner discounts.",

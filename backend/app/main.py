@@ -22,6 +22,10 @@ from app.routes.pet_premium_features import router as pet_premium_router
 from app.routes.user_routes import router as user_router
 from app.routes.content_routes import router as content_router
 from app.routes.admin_portal_routes import router as admin_portal_router
+from app.routes.weekly_report_routes import (
+    router as weekly_report_router,
+    dispatch_weekly_account_reports,
+)
 
 
 
@@ -121,6 +125,7 @@ app.include_router(pet_premium_router, prefix="/api")
 app.include_router(user_router, prefix="/api")
 app.include_router(content_router, prefix="/api")
 app.include_router(admin_portal_router, prefix="/api")
+app.include_router(weekly_report_router, prefix="/api")
 
 
 @app.get("/api/")
@@ -189,6 +194,8 @@ async def startup_scheduler():
     await db.admin_user_notes.create_index([("user_id", 1), ("created_at", -1)])
     await db.downgrade_notices.create_index([("user_id", 1), ("shown_count", 1), ("dismissed", 1)])
     await db.downgrade_notices.create_index([("notice_id", 1)], unique=True)
+    await db.weekly_account_reports.create_index([("user_id", 1), ("week_key", 1)], unique=True)
+    await db.weekly_account_reports.create_index([("sent_at", -1)])
     # Security indices
     await db.user_sessions.create_index([("token_hash", 1)], unique=True, sparse=True)
     await db.login_attempts.create_index([("email", 1), ("created_at", -1)])
@@ -216,6 +223,17 @@ async def startup_scheduler():
             hour=9,       # 9 AM UTC daily
             minute=0,
             id="renewal_reminders",
+            coalesce=True,
+            max_instances=1,
+        )
+        scheduler.add_job(
+            dispatch_weekly_account_reports,
+            "cron",
+            day_of_week="sun",
+            hour=20,
+            minute=0,
+            timezone="America/Chicago",
+            id="weekly_account_reports",
             coalesce=True,
             max_instances=1,
         )

@@ -72,6 +72,7 @@ DEFAULT_PREFS = {
     "reminder_emails": True,   # email when reminders are due
     "newsletter":      False,  # monthly product newsletter
     "tips_guides":     False,  # weekly care tips
+    "weekly_reports":  True,   # personalized Sunday account digest for paid users
     "offers":          False,  # promotions / new features
 }
 
@@ -85,6 +86,7 @@ class UpdatePrefsRequest(BaseModel):
     reminder_emails: Optional[bool] = None
     newsletter:      Optional[bool] = None
     tips_guides:     Optional[bool] = None
+    weekly_reports:  Optional[bool] = None
     offers:          Optional[bool] = None
 
 
