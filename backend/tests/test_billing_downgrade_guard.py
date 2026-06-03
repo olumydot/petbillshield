@@ -124,4 +124,5 @@ def test_missing_stripe_customer_is_self_healed():
     assert "async def _clear_stale_missing_customer(" in source
     assert "async def _get_or_create_stripe_customer(" in source
     assert "if stripe_value(existing, \"deleted\", False):" in source
+    assert "sess_kwargs[\"customer\"] = stripe_customer_id" in source
     assert source.count("await _get_or_create_stripe_customer(") >= 3

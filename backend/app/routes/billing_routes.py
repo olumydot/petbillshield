@@ -231,10 +231,22 @@ async def billing_create_checkout(
             sess_kwargs["discounts"] = [{"promotion_code": promo_code_id}]
             metadata["promo_code"] = payload.coupon_code.strip().upper()
 
-        sess = await asyncio.to_thread(
-            stripe_sdk.checkout.Session.create,
-            **sess_kwargs,
-        )
+        try:
+            sess = await asyncio.to_thread(
+                stripe_sdk.checkout.Session.create,
+                **sess_kwargs,
+            )
+        except stripe_sdk.error.InvalidRequestError as e:
+            if not _is_missing_customer_error(e):
+                raise
+
+            await _clear_stale_missing_customer(user.user_id, stripe_customer_id)
+            stripe_customer_id = await _get_or_create_stripe_customer(user)
+            sess_kwargs["customer"] = stripe_customer_id
+            sess = await asyncio.to_thread(
+                stripe_sdk.checkout.Session.create,
+                **sess_kwargs,
+            )
 
     except stripe_sdk.error.InvalidRequestError as e:
         # Coupon not found or expired — give a user-friendly message
