@@ -938,7 +938,7 @@ export default function DashboardLayout() {
 function DashboardFooter() {
   return (
     <footer
-      className="mt-10 border-t border-[#3A4142]/70 pt-5 pb-2 text-xs text-[#A8A196]"
+      className="mt-10 border-t border-[#3A4142]/70 pt-5 pb-24 text-xs text-[#A8A196] sm:pb-20 lg:pr-56"
       data-testid="dashboard-footer"
     >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

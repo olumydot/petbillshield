@@ -349,7 +349,7 @@ function HeroSection({ pet, petImage, totalSpend, uploadingBill, uploadBillForPe
               {pet.name}
             </h1>
 
-            <p className="mt-5 max-w-2xl text-sm leading-relaxed text-[#2D2C28]/80">
+            <p className="mt-5 max-w-2xl rounded-2xl border border-white/15 bg-[#161B1B]/92 px-4 py-3 text-base font-semibold leading-relaxed text-[#FAF9F6] shadow-lg backdrop-blur-md">
               A calm, intelligent space for records, care tracking, reminders,
               insurance, medications, wellness trends, and long-term health insights.
             </p>
