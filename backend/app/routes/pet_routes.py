@@ -129,7 +129,6 @@ async def list_pets(user: User = Depends(get_current_user)):
 
 @router.get("/pets/{pet_id}")
 async def get_pet(pet_id: str, user: User = Depends(get_current_user)):
-    await require_paid_plan(user)
     row = await db.pets.find_one({"pet_id": pet_id, "user_id": user.user_id}, {"_id": 0})
     if not row:
         raise HTTPException(status_code=404, detail="Pet not found")
@@ -140,7 +139,6 @@ async def get_pet(pet_id: str, user: User = Depends(get_current_user)):
 
 @router.put("/pets/{pet_id}", response_model=Pet)
 async def update_pet(pet_id: str, payload: PetCreate, user: User = Depends(get_current_user)):
-    await require_paid_plan(user)
     row = await db.pets.find_one({"pet_id": pet_id, "user_id": user.user_id}, {"_id": 0})
     if not row:
         raise HTTPException(status_code=404, detail="Pet not found")
@@ -154,9 +152,12 @@ async def update_pet(pet_id: str, payload: PetCreate, user: User = Depends(get_c
 
 @router.delete("/pets/{pet_id}")
 async def delete_pet(pet_id: str, user: User = Depends(get_current_user)):
-    await require_paid_plan(user)
     await db.pets.delete_one({"pet_id": pet_id, "user_id": user.user_id})
     await db.pet_records.delete_many({"pet_id": pet_id, "user_id": user.user_id})
+    await db.users.update_one(
+        {"user_id": user.user_id},
+        {"$pull": {"active_pet_ids": pet_id}},
+    )
     return {"ok": True}
 
 

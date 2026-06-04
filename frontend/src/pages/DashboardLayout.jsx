@@ -894,6 +894,7 @@ export default function DashboardLayout() {
           )}
 
           <Outlet />
+          <DashboardFooter />
         </main>
       </div>
 
@@ -931,6 +932,48 @@ export default function DashboardLayout() {
         />
       )}
     </div>
+  );
+}
+
+function DashboardFooter() {
+  return (
+    <footer
+      className="mt-10 border-t border-[#3A4142]/70 pt-5 pb-2 text-xs text-[#A8A196]"
+      data-testid="dashboard-footer"
+    >
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="space-y-1">
+          <p className="font-semibold text-[#D4CEC0]">
+            PetBill Shield
+          </p>
+          <p>
+            © {new Date().getFullYear()} · No diagnosis, no refusal-of-care advice.
+          </p>
+        </div>
+
+        <nav className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <Link
+            to="/contact"
+            className="font-semibold text-[#F2A58F] transition-colors hover:text-[#FFD7CB]"
+            data-testid="dashboard-footer-contact"
+          >
+            Contact support
+          </Link>
+          <Link
+            to="/dashboard/pricing"
+            className="transition-colors hover:text-[#EFE8DA]"
+          >
+            Plans
+          </Link>
+          <Link
+            to="/dashboard/settings"
+            className="transition-colors hover:text-[#EFE8DA]"
+          >
+            Account
+          </Link>
+        </nav>
+      </div>
+    </footer>
   );
 }
 

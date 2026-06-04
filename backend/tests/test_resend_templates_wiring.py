@@ -47,6 +47,14 @@ def test_auth_and_user_routes_use_template_send_helper():
     user_source = USER_FILE.read_text()
 
     assert 'template_key="password_reset"' in auth_source
+    assert 'template_key="welcome"' in auth_source
+    assert "send_account_welcome_email" in auth_source
     assert 'template_key="verify_email_change"' in user_source
     assert "send_resend_email" in auth_source
     assert "send_resend_email" in user_source
+
+
+def test_new_user_auth_paths_send_account_welcome_email():
+    source = AUTH_FILE.read_text()
+    assert source.count("await send_account_welcome_email(user_id, email, name)") >= 3
+    assert '"account_welcome_email_sent_at"' in source

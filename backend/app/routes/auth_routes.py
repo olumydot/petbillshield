@@ -126,6 +126,7 @@ async def auth_exchange_session(payload: SessionExchangeRequest, response: Respo
             "picture": picture,
             "created_at": datetime.now(timezone.utc).isoformat(),
         })
+        await send_account_welcome_email(user_id, email, name)
 
     expires_at = datetime.now(timezone.utc) + timedelta(days=7)
     await db.user_sessions.insert_one({
@@ -166,6 +167,63 @@ async def require_admin(user: User = Depends(get_current_user)) -> User:
     if not _is_admin_email(user.email):
         raise HTTPException(status_code=403, detail="Admin only")
     return user
+
+
+async def send_account_welcome_email(user_id: str, email: str, name: str = "") -> bool:
+    if not email:
+        return False
+
+    first_name = (name or email.split("@", 1)[0] or "there").split()[0]
+    dashboard_url = f"{FRONTEND_URL}/dashboard"
+    analyze_url = f"{FRONTEND_URL}/dashboard/analyze"
+    contact_url = f"{FRONTEND_URL}/contact"
+
+    try:
+        await send_resend_email(
+            to=email,
+            subject="Welcome to PetBill Shield",
+            template_key="welcome",
+            template_variables={
+                "first_name": first_name,
+                "name": name or first_name,
+                "plan_label": "Free tier",
+                "plan_id": "free",
+                "price": "$0",
+                "billing_frequency": "month",
+                "expires_at": "No expiration",
+                "dashboard_url": dashboard_url,
+                "analyze_url": analyze_url,
+                "contact_url": contact_url,
+                "frontend_url": FRONTEND_URL,
+            },
+            html=f"""
+                <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #2D2C28;">
+                    <h2>Welcome to PetBill Shield</h2>
+                    <p>Hi {first_name}, your account is ready.</p>
+                    <p>You can now analyze your first vet bill, create pet records, set reminders, and keep everything organized in one place.</p>
+                    <p>
+                        <a href="{analyze_url}" style="background:#D26D53;color:white;padding:12px 18px;text-decoration:none;border-radius:6px;">
+                            Analyze your first bill
+                        </a>
+                    </p>
+                    <p style="font-size:13px;color:#65635C;">
+                        PetBill Shield does not diagnose pets or replace your veterinarian. It helps you understand care costs and ask better questions.
+                    </p>
+                    <p style="font-size:13px;color:#65635C;">
+                        Need help? Visit <a href="{contact_url}" style="color:#D26D53;">contact support</a>.
+                    </p>
+                </div>
+            """,
+        )
+        if user_id:
+            await db.users.update_one(
+                {"user_id": user_id},
+                {"$set": {"account_welcome_email_sent_at": datetime.now(timezone.utc).isoformat()}},
+            )
+        return True
+    except Exception as e:
+        logger.warning("Account welcome email failed for %s: %s", email, e)
+        return False
 
 
 @router.post("/auth/logout")
@@ -336,6 +394,8 @@ async def auth_signup(request: Request, payload: EmailSignupRequest, response: R
         "password_hash": hash_password(password),
         "created_at": datetime.now(timezone.utc).isoformat(),
     })
+
+    await send_account_welcome_email(user_id, email, name)
 
     session_token = await create_user_session(user_id, response)
 
@@ -547,6 +607,7 @@ async def google_callback(request: Request):
             "created_at": datetime.now(timezone.utc).isoformat(),
             "last_login_at": datetime.now(timezone.utc).isoformat(),
         })
+        await send_account_welcome_email(user_id, email, name)
 
     # If a ?next= was stored before the OAuth flow, honour it; else go to dashboard
     next_url = request.cookies.get("google_oauth_next", "")
