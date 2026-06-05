@@ -41,6 +41,22 @@ def _paginate(total: int, page: int, limit: int) -> dict:
     }
 
 
+def _configure_stripe() -> None:
+    stripe_sdk.api_key = STRIPE_API_KEY
+    stripe_sdk.api_base = "https://api.stripe.com"
+
+
+def _promo_discount_label(coupon) -> str:
+    percent_off = getattr(coupon, "percent_off", None)
+    amount_off = getattr(coupon, "amount_off", None)
+    currency = (getattr(coupon, "currency", None) or "usd").upper()
+    if percent_off is not None:
+        return f"{percent_off:g}%"
+    if amount_off is not None:
+        return f"{currency} {amount_off / 100:.2f}"
+    return "Discount"
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  OVERVIEW STATS
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -528,23 +544,29 @@ async def portal_list_promos(_: User = Depends(require_admin)):
     if not STRIPE_API_KEY:
         return {"promos": [], "note": "Stripe not configured"}
     try:
-        codes = stripe_sdk.PromotionCode.list(limit=50, active=True)
+        _configure_stripe()
+        codes = stripe_sdk.PromotionCode.list(
+            limit=50,
+            active=True,
+            expand=["data.coupon"],
+        )
         result = []
         for pc in codes.auto_paging_iter():
             coupon = pc.coupon
             result.append({
                 "id":           pc.id,
                 "code":         pc.code,
-                "name":         coupon.name,
+                "name":         getattr(coupon, "name", None) or pc.code,
                 "active":       pc.active,
-                "discount":     f"{coupon.percent_off}%" if coupon.percent_off else f"${coupon.amount_off/100:.2f}",
-                "duration":     coupon.duration,
+                "discount":     _promo_discount_label(coupon),
+                "duration":     getattr(coupon, "duration", None) or "unknown",
                 "times_redeemed": pc.times_redeemed,
                 "max_redemptions": pc.max_redemptions,
                 "expires_at":   pc.expires_at,
             })
         return {"promos": result}
     except Exception as e:
+        logger.exception(f"Could not load Stripe promo codes: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -556,6 +578,7 @@ async def portal_create_promo(
     if not STRIPE_API_KEY:
         raise HTTPException(status_code=500, detail="Stripe not configured.")
     try:
+        _configure_stripe()
         coupon_params: dict = {
             "name":     payload.name,
             "duration": payload.duration,
@@ -594,6 +617,7 @@ async def portal_deactivate_promo(
     if not STRIPE_API_KEY:
         raise HTTPException(status_code=500, detail="Stripe not configured.")
     try:
+        _configure_stripe()
         stripe_sdk.PromotionCode.modify(promo_id, active=False)
         return {"ok": True}
     except stripe_sdk.error.StripeError as e:

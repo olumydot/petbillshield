@@ -45,14 +45,28 @@ export default function Promos() {
 
   const load = async () => {
     setLoading(true);
-    try {
-      const { data } = await api.get("/admin/portal/promos");
+    const [promosRes, bannerRes] = await Promise.allSettled([
+      api.get("/admin/portal/promos"),
+      api.get("/content/promo-banner/admin"),
+    ]);
+
+    if (promosRes.status === "fulfilled") {
+      const { data } = promosRes.value;
       setPromos(data.promos || []);
       if (data.note) toast.info(data.note);
-      const bannerRes = await api.get("/content/promo-banner/admin");
-      setBanner((prev) => ({ ...prev, ...bannerRes.data }));
-    } catch { toast.error("Couldn't load promos"); }
-    finally { setLoading(false); }
+    } else {
+      const detail = promosRes.reason?.response?.data?.detail;
+      toast.error(detail || "Couldn't load Stripe promo codes");
+    }
+
+    if (bannerRes.status === "fulfilled") {
+      setBanner((prev) => ({ ...prev, ...bannerRes.value.data }));
+    } else {
+      const detail = bannerRes.reason?.response?.data?.detail;
+      toast.error(detail || "Couldn't load promo banner settings");
+    }
+
+    setLoading(false);
   };
 
   const toggleArray = (field, value) => {
