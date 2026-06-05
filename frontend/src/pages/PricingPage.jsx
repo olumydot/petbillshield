@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useBilling } from "../lib/billing";
 import { toast } from "sonner";
+import api from "../lib/api";
 import PromoBanner from "../components/PromoBanner";
 
 const PLAN_TIER = {
@@ -131,36 +132,31 @@ const FEATURE_COMPARISON = [
   { label: "Adoption packets", free: "—", vault: "—", family: "—", rescue: "✓" },
 ];
 
-const YEARLY_PROMO_PLAN_IDS = ["vault_yearly", "family_yearly", "rescue_yearly"];
 
 function moneyFromLabel(label = "") {
   const value = Number(String(label).replace(/[^0-9.]/g, ""));
   return Number.isFinite(value) ? value : 0;
 }
 
+// NO client-side defaults: a discount is only ever derived from a promo object
+// that the backend (/billing/validate-promo) has confirmed valid. An unvalidated
+// or partial promo yields 0% → no discount shown.
 function percentFromPromo(promo) {
   const explicit = Number(promo?.required_percent_off);
-  if (Number.isFinite(explicit) && explicit > 0) return explicit;
-  const display = String(promo?.discount_display || "");
-  const match = display.match(/(\d+(?:\.\d+)?)\s*%/);
-  if (match) return Number(match[1]);
-  return 50;
+  return Number.isFinite(explicit) && explicit > 0 ? explicit : 0;
 }
 
 function durationMonthsFromPromo(promo) {
   const explicit = Number(promo?.required_duration_months);
-  if (Number.isFinite(explicit) && explicit > 0) return explicit;
-  const display = String(promo?.discount_display || "");
-  const match = display.match(/first\s+(\d+)\s+months?/i);
-  if (match) return Number(match[1]);
-  return 3;
+  return Number.isFinite(explicit) && explicit > 0 ? explicit : 0;
 }
 
 function discountedMoneyLabel(label, promo, planId = "") {
   const amount = moneyFromLabel(label);
   const percent = percentFromPromo(promo);
-  if (!amount || !percent) return label;
-  const discountMonths = planId.endsWith("_yearly") ? durationMonthsFromPromo(promo) : 12;
+  if (!amount || !percent) return label;            // no valid promo → full price
+  const months = durationMonthsFromPromo(promo);
+  const discountMonths = planId.endsWith("_yearly") ? (months || 12) : 12;
   const discount = amount * (percent / 100) * (discountMonths / 12);
   return `$${Math.max(0, amount - discount).toFixed(2)}`;
 }
@@ -189,47 +185,65 @@ export default function PricingPage() {
   const [reactivatingPlan, setReactivatingPlan] = useState(false);
   const activePromoCode = activePromo?.promo_code || "";
 
+  const [promoChecking, setPromoChecking] = useState(false);
+
+  // Authoritatively validate a code against the backend. Only sets activePromo
+  // (and therefore shows any discount) when the server confirms it's valid.
+  const validateAndApplyPromo = useCallback(async (rawCode, { silent = false } = {}) => {
+    const code = (rawCode || "").trim().toUpperCase();
+    if (!code) {
+      if (!silent) toast.info("Enter a promo code first.");
+      return false;
+    }
+    setPromoChecking(true);
+    try {
+      // Validate against a representative yearly plan; checkout re-validates per plan.
+      const { data } = await api.post("/billing/validate-promo", {
+        code,
+        plan_id: "vault_yearly",
+      });
+      setActivePromo({
+        promo_code:               data.promo_code || code,
+        discount_display:         data.discount_display || "",
+        plan_scope:               data.plan_scope || "all",
+        allowed_plan_ids:         data.allowed_plan_ids || [],
+        required_percent_off:     data.required_percent_off,
+        required_duration_months: data.required_duration_months,
+      });
+      setPromoInput(code);
+      localStorage.setItem("petbill_active_promo_code", code);
+      if ((data.plan_scope || "").toLowerCase() === "yearly") setBillingCycle("yearly");
+      if (!silent) toast.success("Promo code applied.");
+      return true;
+    } catch (e) {
+      // Invalid / expired / wrong plan — never show a discount.
+      setActivePromo(null);
+      localStorage.removeItem("petbill_active_promo_code");
+      const detail = e?.response?.data?.detail;
+      if (!silent) toast.error(typeof detail === "string" ? detail : "That promo code is not valid.");
+      return false;
+    } finally {
+      setPromoChecking(false);
+    }
+  }, []);
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const code = params.get("promo") || localStorage.getItem("petbill_active_promo_code");
     if (code) {
-      setActivePromo((prev) => prev || {
-        promo_code: code.toUpperCase(),
-        discount_display: "50% off first 3 months",
-        plan_scope: "yearly",
-        allowed_plan_ids: YEARLY_PROMO_PLAN_IDS,
-        required_percent_off: 50,
-        required_duration_months: 3,
-      });
       setPromoInput(code.toUpperCase());
+      // Validate silently on load — a stale/invalid stored code shows no discount.
+      validateAndApplyPromo(code, { silent: true });
     }
-  }, []);
+  }, [validateAndApplyPromo]);
 
+  // PromoBanner passes a server-sourced promo object; still validate to be safe.
   const handlePromo = useCallback((promo) => {
-    setActivePromo(promo);
-    setPromoInput(promo?.promo_code || "");
-    if ((promo?.plan_scope || "").toLowerCase() === "yearly") {
-      setBillingCycle("yearly");
-    }
-  }, []);
+    if (promo?.promo_code) validateAndApplyPromo(promo.promo_code, { silent: true });
+  }, [validateAndApplyPromo]);
 
   function applyManualPromo() {
-    const code = promoInput.trim().toUpperCase();
-    if (!code) {
-      toast.info("Enter a promo code first.");
-      return;
-    }
-    setActivePromo({
-      promo_code: code,
-      discount_display: "50% off first 3 months",
-      plan_scope: "yearly",
-      allowed_plan_ids: YEARLY_PROMO_PLAN_IDS,
-      required_percent_off: 50,
-      required_duration_months: 3,
-    });
-    localStorage.setItem("petbill_active_promo_code", code);
-    setBillingCycle("yearly");
-    toast.success("Promo code added. It will be checked at checkout.");
+    validateAndApplyPromo(promoInput);
   }
 
   function clearManualPromo() {
@@ -521,9 +535,11 @@ export default function PricingPage() {
               <button
                 type="button"
                 onClick={applyManualPromo}
-                className="min-h-[44px] rounded-xl bg-[#D26D53] px-4 text-sm font-bold text-white hover:bg-[#B94F37] transition"
+                disabled={promoChecking}
+                className="min-h-[44px] rounded-xl bg-[#D26D53] px-4 text-sm font-bold text-white hover:bg-[#B94F37] transition disabled:opacity-60 inline-flex items-center justify-center gap-2"
               >
-                Apply
+                {promoChecking && <Loader2 size={14} className="animate-spin" />}
+                {promoChecking ? "Checking…" : "Apply"}
               </button>
             </div>
           </div>

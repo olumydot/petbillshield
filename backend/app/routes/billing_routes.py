@@ -326,7 +326,7 @@ async def billing_create_checkout(
             customer=stripe_customer_id,
             mode="subscription",
             line_items=[{"price": plan["stripe_price_id"], "quantity": 1}],
-            ui_mode="embedded",
+            ui_mode="embedded_page",   # Stripe renamed "embedded" -> "embedded_page"
             redirect_on_completion="never",
             metadata=metadata,
         )
@@ -442,6 +442,7 @@ async def billing_validate_promo(
         "promo_code":       code,
         "discount_display": promo.get("discount_display") or "",
         "plan_scope":       (promo.get("plan_scope") or "all"),
+        "allowed_plan_ids": promo.get("allowed_plan_ids") or [],
         "required_percent_off":     promo.get("required_percent_off"),
         "required_duration_months": promo.get("required_duration_months"),
     }
@@ -999,11 +1000,12 @@ async def _resume_open_checkout_session(user_id: str, requested_plan_id: str) ->
     payment_status = stripe_value(sess, "payment_status", "") or ""
     session_ui_mode = stripe_value(sess, "ui_mode", "") or ""
 
-    # Only resume sessions created with the CURRENT integration (embedded).
-    # A session created under an older ui_mode hands back a client_secret that
+    # Only resume sessions created with the CURRENT integration (embedded_page).
+    # A session created under an older/different ui_mode hands back a client_secret
     # the current <EmbeddedCheckout> frontend can't use — which manifests as a
-    # checkout that spins forever. Discard it so a fresh session is created.
-    if session_status == "open" and payment_status != "paid" and session_ui_mode == "embedded":
+    # checkout that spins forever or errors. Discard it so a fresh session is made.
+    _CURRENT_UI_MODES = {"embedded_page", "embedded"}
+    if session_status == "open" and payment_status != "paid" and session_ui_mode in _CURRENT_UI_MODES:
         client_secret = stripe_value(sess, "client_secret", None)
         if client_secret:
             return {
@@ -1015,7 +1017,7 @@ async def _resume_open_checkout_session(user_id: str, requested_plan_id: str) ->
         return None
 
     # Stale / mismatched session — mark the local record so we stop resuming it.
-    if session_ui_mode and session_ui_mode != "embedded":
+    if session_ui_mode and session_ui_mode not in _CURRENT_UI_MODES:
         await db.payment_transactions.update_one(
             {"session_id": tx["session_id"]},
             {"$set": {"payment_status": "expired", "status": "stale_ui_mode"}},
