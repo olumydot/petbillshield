@@ -140,6 +140,27 @@ const PLAN_DETAILS = {
   },
 };
 
+function moneyFromLabel(label = "") {
+  const value = Number(String(label).replace(/[^0-9.]/g, ""));
+  return Number.isFinite(value) ? value : 0;
+}
+
+function percentFromPromo(banner) {
+  const explicit = Number(banner?.required_percent_off);
+  if (Number.isFinite(explicit) && explicit > 0) return explicit;
+  const display = String(banner?.discount_display || "");
+  const match = display.match(/(\d+(?:\.\d+)?)\s*%/);
+  if (match) return Number(match[1]);
+  return 50;
+}
+
+function discountedMoneyLabel(label, banner) {
+  const amount = moneyFromLabel(label);
+  const percent = percentFromPromo(banner);
+  if (!amount || !percent) return "";
+  return `$${(amount * (1 - percent / 100)).toFixed(2)}`;
+}
+
 // ── Inner form (must be inside <CheckoutElementsProvider>) ───────────────────
 function PaymentForm({ planId, planPrice, sessionId, onSuccess }) {
   const checkoutState = useCheckoutElements();
@@ -373,6 +394,9 @@ export default function CheckoutPage() {
   const checkoutOptions = clientSecret
     ? { clientSecret, elementsOptions: { appearance: STRIPE_APPEARANCE } }
     : null;
+  const promoPreview = promoCode && planId.endsWith("_yearly")
+    ? discountedMoneyLabel(plan.price, promoBanner)
+    : "";
 
   function applyPromoFromCheckout() {
     const code = promoInput.trim().toUpperCase();
@@ -466,12 +490,26 @@ export default function CheckoutPage() {
             {/* ── Right: payment form ──────────────────────────────── */}
             <section className="p-6 sm:p-8 lg:p-10 bg-white/45">
               <div className="flex items-baseline gap-2 mb-6">
-                <span className="font-serif-display text-5xl text-[#D26D53]">
-                  {plan.price.split("/")[0]}
-                </span>
-                <span className="text-sm text-[#65635C]">
-                  /{plan.price.split("/")[1]}
-                </span>
+                {promoPreview ? (
+                  <>
+                    <span className="font-serif-display text-5xl text-[#D26D53]">
+                      {promoPreview}
+                    </span>
+                    <span className="text-sm text-[#65635C]">today</span>
+                    <span className="text-sm text-[#8A887F] line-through">
+                      {plan.price}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className="font-serif-display text-5xl text-[#D26D53]">
+                      {plan.price.split("/")[0]}
+                    </span>
+                    <span className="text-sm text-[#65635C]">
+                      /{plan.price.split("/")[1]}
+                    </span>
+                  </>
+                )}
               </div>
 
               {promoCode && (
@@ -491,6 +529,7 @@ export default function CheckoutPage() {
                   <p className="mt-1 text-xs leading-relaxed">
                     {promoBanner?.discount_display || "50% off first 3 months"}
                     {promoBanner?.plan_scope === "yearly" ? " for eligible yearly plans." : "."}
+                    {promoPreview ? ` Estimated first payment: ${promoPreview}.` : ""}
                   </p>
                 </div>
               )}

@@ -133,6 +133,27 @@ const FEATURE_COMPARISON = [
 
 const YEARLY_PROMO_PLAN_IDS = ["vault_yearly", "family_yearly", "rescue_yearly"];
 
+function moneyFromLabel(label = "") {
+  const value = Number(String(label).replace(/[^0-9.]/g, ""));
+  return Number.isFinite(value) ? value : 0;
+}
+
+function percentFromPromo(promo) {
+  const explicit = Number(promo?.required_percent_off);
+  if (Number.isFinite(explicit) && explicit > 0) return explicit;
+  const display = String(promo?.discount_display || "");
+  const match = display.match(/(\d+(?:\.\d+)?)\s*%/);
+  if (match) return Number(match[1]);
+  return 50;
+}
+
+function discountedMoneyLabel(label, promo) {
+  const amount = moneyFromLabel(label);
+  const percent = percentFromPromo(promo);
+  if (!amount || !percent) return label;
+  return `$${(amount * (1 - percent / 100)).toFixed(2)}`;
+}
+
 export default function PricingPage() {
   const { t } = useTranslation();
   const { billing, refresh, switchPlan, cancelSwitch, cancelPlan, reactivatePlan } = useBilling();
@@ -187,9 +208,10 @@ export default function PricingPage() {
     }
     setActivePromo({
       promo_code: code,
-      discount_display: "Promo discount",
+      discount_display: "50% off first 3 months",
       plan_scope: "yearly",
       allowed_plan_ids: YEARLY_PROMO_PLAN_IDS,
+      required_percent_off: 50,
     });
     localStorage.setItem("petbill_active_promo_code", code);
     setBillingCycle("yearly");
@@ -709,6 +731,7 @@ function PriceCard({
     (promoScope !== "yearly" || currentPlanId.endsWith("_yearly")) &&
     (promoScope !== "monthly" || currentPlanId.endsWith("_monthly")) &&
     (promoAllowedPlans.length === 0 || promoAllowedPlans.includes(currentPlanId));
+  const discountedPrice = promoApplies ? discountedMoneyLabel(price, activePromo) : "";
 
   const isHigher = p.tier > currentTier;
   const isLower = p.tier < currentTier && p.tier > 0;
@@ -926,15 +949,33 @@ function PriceCard({
         )}
       </div>
 
-      <div className="flex items-end gap-2 mt-3">
-        <span
-          className={`font-serif-display leading-none ${
-            wide ? "text-5xl" : "text-5xl"
-          } ${cs.price}`}
-        >
-          {price}
-        </span>
-        <span className={`text-sm mb-1 ${cs.sub}`}>{sub}</span>
+      <div className="flex flex-wrap items-end gap-2 mt-3">
+        {discountedPrice ? (
+          <>
+            <span
+              className={`font-serif-display leading-none ${
+                wide ? "text-5xl" : "text-5xl"
+              } ${cs.price}`}
+            >
+              {discountedPrice}
+            </span>
+            <span className={`text-sm mb-1 ${cs.sub}`}>today</span>
+            <span className={`text-sm mb-1 line-through opacity-65 ${cs.sub}`}>
+              {price}
+            </span>
+          </>
+        ) : (
+          <>
+            <span
+              className={`font-serif-display leading-none ${
+                wide ? "text-5xl" : "text-5xl"
+              } ${cs.price}`}
+            >
+              {price}
+            </span>
+            <span className={`text-sm mb-1 ${cs.sub}`}>{sub}</span>
+          </>
+        )}
       </div>
 
       {!isFree && billingCycle === "yearly" && (
