@@ -6,72 +6,33 @@
  *   • 3DS redirect lands back here after bank authentication
  *   • Direct link / mobile deep-link
  *
- * Uses Stripe PaymentElement: the card fields are a small Stripe iframe,
- * everything else is the site's own UI. Nothing ever redirects to stripe.com.
+ * Uses Stripe Embedded Checkout (ui_mode="embedded", redirect_on_completion=
+ * "never") — the same integration as the pricing-page modal. Handles cards,
+ * ACH/bank, and Link inline; onComplete fires when payment is confirmed.
+ * Nothing ever redirects to stripe.com.
  */
-import { useState, useEffect, useCallback } from "react";
-import { loadStripe } from "@stripe/stripe-js";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { loadStripe } from "@stripe/stripe-js/pure";
 import {
-  CheckoutElementsProvider,
-  PaymentElement,
-  useCheckoutElements,
-} from "@stripe/react-stripe-js/checkout";
+  EmbeddedCheckout,
+  EmbeddedCheckoutProvider,
+} from "@stripe/react-stripe-js";
 import { useSearchParams, Link, useNavigate } from "react-router-dom";
 import {
   ShieldCheck, Bell, TrendingUp, FolderHeart,
-  Infinity, Lock, Loader2, CheckCircle2, AlertCircle,
+  Infinity, Lock, Loader2, CheckCircle2,
   ArrowLeft,
 } from "lucide-react";
 import api from "../lib/api";
 import { clearBillingCache, useBilling } from "../lib/billing";
 
-const stripePromise = loadStripe(process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY);
-
-const STRIPE_APPEARANCE = {
-  theme: "flat",
-  variables: {
-    colorPrimary:       "#D26D53",
-    colorBackground:    "#FFFFFF",
-    colorText:          "#2D2C28",
-    colorTextSecondary: "#65635C",
-    colorDanger:        "#C0392B",
-    fontFamily:         "'Inter', 'ui-sans-serif', system-ui, sans-serif",
-    borderRadius:       "12px",
-    fontSizeBase:       "14px",
-    spacingUnit:        "4px",
-  },
-  rules: {
-    ".Input": {
-      border:     "1px solid #E5E2D9",
-      boxShadow:  "none",
-      padding:    "10px 12px",
-      background: "#FAF9F6",
-    },
-    ".Input:focus": {
-      border:    "1px solid #D26D53",
-      outline:   "none",
-      boxShadow: "0 0 0 3px rgba(210,109,83,0.12)",
-    },
-    ".Label": {
-      fontSize:      "11px",
-      fontWeight:    "600",
-      textTransform: "uppercase",
-      letterSpacing: "0.10em",
-      color:         "#65635C",
-      marginBottom:  "6px",
-    },
-    ".Tab": {
-      border:     "1px solid #E5E2D9",
-      boxShadow:  "none",
-      background: "#FAF9F6",
-    },
-    ".Tab--selected": {
-      border:     "1px solid #D26D53",
-      background: "#FFF7F2",
-      color:      "#D26D53",
-    },
-  },
-};
+let _stripePromise = null;
+function getStripePromise() {
+  if (!_stripePromise && process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY) {
+    _stripePromise = loadStripe(process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY);
+  }
+  return _stripePromise;
+}
 
 const PLAN_DETAILS = {
   vault_monthly: {
@@ -145,94 +106,62 @@ function moneyFromLabel(label = "") {
   return Number.isFinite(value) ? value : 0;
 }
 
-function percentFromPromo(banner) {
-  const explicit = Number(banner?.required_percent_off);
-  if (Number.isFinite(explicit) && explicit > 0) return explicit;
-  const display = String(banner?.discount_display || "");
-  const match = display.match(/(\d+(?:\.\d+)?)\s*%/);
-  if (match) return Number(match[1]);
-  return 50;
-}
-
-function durationMonthsFromPromo(banner) {
-  const explicit = Number(banner?.required_duration_months);
-  if (Number.isFinite(explicit) && explicit > 0) return explicit;
-  const display = String(banner?.discount_display || "");
-  const match = display.match(/first\s+(\d+)\s+months?/i);
-  if (match) return Number(match[1]);
-  return 3;
-}
-
-function discountedMoneyLabel(label, banner, planId = "") {
-  const amount = moneyFromLabel(label);
-  const percent = percentFromPromo(banner);
-  if (!amount || !percent) return "";
-  const discountMonths = planId.endsWith("_yearly") ? durationMonthsFromPromo(banner) : 12;
+// Compute the discounted first-payment label from a BACKEND-VALIDATED promo.
+// `info` comes from POST /billing/validate-promo — never inferred client-side,
+// and NO defaults: if the validated data is missing, we show no discount.
+function discountedMoneyLabel(label, info, planId = "") {
+  const amount  = moneyFromLabel(label);
+  const percent = Number(info?.required_percent_off);
+  const months  = Number(info?.required_duration_months);
+  if (!amount || !Number.isFinite(percent) || percent <= 0) return "";
+  const discountMonths = planId.endsWith("_yearly")
+    ? (Number.isFinite(months) && months > 0 ? months : 12)
+    : 12;
   const discount = amount * (percent / 100) * (discountMonths / 12);
   return `$${Math.max(0, amount - discount).toFixed(2)}`;
 }
 
-// ── Inner form (must be inside <CheckoutElementsProvider>) ───────────────────
-function PaymentForm({ planId, planPrice, sessionId, onSuccess }) {
-  const checkoutState = useCheckoutElements();
+// ── Embedded checkout completion handler ─────────────────────────────────────
+// Stripe's <EmbeddedCheckout> (ui_mode="embedded", redirect_on_completion="never")
+// fires onComplete when payment is confirmed — including async methods like ACH.
+// We then activate the entitlement and poll billing/me until it goes active.
+function EmbeddedPayment({ clientSecret, sessionId, stripePromise, onSuccess }) {
+  const [completed, setCompleted] = useState(false);
+  const [pollMsg,   setPollMsg]   = useState("Activating your plan…");
 
-  const [confirming, setConfirming] = useState(false);
-  const [errorMsg,   setErrorMsg]   = useState("");
-  const [succeeded,  setSucceeded]  = useState(false);
-  const [pollMsg,    setPollMsg]    = useState("Activating your plan…");
+  const handleComplete = useCallback(async () => {
+    setCompleted(true);
 
-  const pollUntilActive = useCallback(
-    async (attempts = 0) => {
-      if (attempts > 10) {
-        setPollMsg("Taking a moment — you'll get a confirmation email shortly.");
-        setTimeout(() => onSuccess(), 3000);
-        return;
-      }
+    try {
+      if (sessionId) await api.get(`/billing/status/${sessionId}`);
+    } catch (_) { /* webhook + self-heal will catch it */ }
+
+    clearBillingCache();
+
+    let attempts = 0;
+    const poll = async () => {
       try {
         const { data } = await api.get("/billing/me");
         if (data?.active) { onSuccess(data); return; }
-      } catch (_) { /* ignore transient */ }
-      setTimeout(() => pollUntilActive(attempts + 1), 1500);
-    },
-    [onSuccess]
+      } catch (_) {}
+      attempts += 1;
+      if (attempts < 12) {
+        setTimeout(poll, 1800);
+      } else {
+        setPollMsg("Payment received — you'll get a confirmation email shortly.");
+        setTimeout(() => onSuccess(), 2500);
+      }
+    };
+    poll();
+  }, [sessionId, onSuccess]);
+
+  const options = useCallback(
+    () => ({ fetchClientSecret: async () => clientSecret, onComplete: handleComplete }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [clientSecret, handleComplete]
   );
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (checkoutState.type !== "success") return;
-
-    setConfirming(true);
-    setErrorMsg("");
-
-    const returnUrl = `${window.location.origin}/dashboard/checkout?plan=${encodeURIComponent(planId)}&checkout=success&session_id=${encodeURIComponent(sessionId)}`;
-
-    const result = await checkoutState.checkout.confirm({
-      returnUrl,
-      redirect: "if_required",
-    });
-
-    if (result.type === "error") {
-      setErrorMsg(result.error?.message || "Payment failed. Please try again.");
-      setConfirming(false);
-      return;
-    }
-
-    setSucceeded(true);
-    const completedSessionId = result.session?.id || sessionId;
-
-    try {
-      await api.get(`/billing/status/${completedSessionId}`);
-      clearBillingCache();
-      pollUntilActive();
-      return;
-    } catch {
-      setPollMsg("Payment confirmed. Finalizing your plan…");
-      pollUntilActive();
-      return;
-    }
-  };
-
-  if (succeeded) {
+  if (completed) {
     return (
       <div className="py-12 flex flex-col items-center gap-4 text-center">
         <CheckCircle2 className="text-[#556045]" size={56} />
@@ -246,32 +175,9 @@ function PaymentForm({ planId, planPrice, sessionId, onSuccess }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
-      <PaymentElement options={{ layout: "tabs" }} />
-
-      {errorMsg && (
-        <div className="flex items-start gap-2.5 rounded-xl bg-[#FEF0EE] border border-[#F2C5B7] p-3">
-          <AlertCircle size={15} className="text-[#D26D53] shrink-0 mt-0.5" />
-          <p className="text-sm text-[#8C2D14]">{errorMsg}</p>
-        </div>
-      )}
-
-      <button
-        type="submit"
-        disabled={checkoutState.type !== "success" || confirming}
-        className="w-full rounded-xl bg-[#2D2C28] text-[#FAF9F6] py-3.5 text-sm font-semibold
-                   flex items-center justify-center gap-2 hover:bg-[#3F3E39] transition-colors
-                   disabled:opacity-60 disabled:cursor-not-allowed"
-      >
-        {confirming && <Loader2 size={16} className="animate-spin" />}
-        {confirming ? "Processing…" : `Subscribe — ${planPrice}`}
-      </button>
-
-      <p className="text-center text-xs text-[#8A887F] flex items-center justify-center gap-1.5">
-        <Lock size={11} />
-        Secured by Stripe · Cancel anytime
-      </p>
-    </form>
+    <EmbeddedCheckoutProvider stripe={stripePromise} options={options()}>
+      <EmbeddedCheckout />
+    </EmbeddedCheckoutProvider>
   );
 }
 
@@ -293,8 +199,15 @@ export default function CheckoutPage() {
   const [loading,      setLoading]      = useState(true);
   const [initError,    setInitError]    = useState("");
   const [resumeUrl,    setResumeUrl]    = useState("");
-  const [promoBanner,  setPromoBanner]  = useState(null);
   const [promoInput,   setPromoInput]   = useState(promoCode.toUpperCase());
+  // Promo validation — single source of truth is POST /billing/validate-promo.
+  // status: "idle" | "checking" | "valid" | "invalid"
+  const [promoStatus, setPromoStatus] = useState(promoCode ? "checking" : "idle");
+  const [promoInfo,   setPromoInfo]   = useState(null);   // validated terms from backend
+  const [promoError,  setPromoError]  = useState("");
+  const promoValid = promoStatus === "valid" && Boolean(promoInfo);
+  const stripePromiseRef = useRef(null);
+  if (!stripePromiseRef.current) stripePromiseRef.current = getStripePromise();
 
   useEffect(() => {
     setPromoInput(promoCode.toUpperCase());
@@ -346,8 +259,44 @@ export default function CheckoutPage() {
     return () => { cancelled = true; };
   }, [handleSuccess, isReturningFromBank, returnedSessionId]);
 
+  // ── Validate the promo code authoritatively BEFORE applying it ──────────────
+  useEffect(() => {
+    if (!promoCode) {
+      setPromoStatus("idle");
+      setPromoInfo(null);
+      setPromoError("");
+      return undefined;
+    }
+
+    let cancelled = false;
+    setPromoStatus("checking");
+    setPromoInfo(null);
+    setPromoError("");
+
+    api
+      .post("/billing/validate-promo", { code: promoCode, plan_id: planId })
+      .then(({ data }) => {
+        if (cancelled) return;
+        setPromoInfo(data);
+        setPromoStatus("valid");
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        const detail = e?.response?.data?.detail;
+        setPromoError(typeof detail === "string" ? detail : "That promo code is not valid for this plan.");
+        setPromoStatus("invalid");
+        setPromoInfo(null);
+      });
+
+    return () => { cancelled = true; };
+  }, [promoCode, planId]);
+
+  // ── Create the checkout session — only attach the coupon once it's valid ────
   useEffect(() => {
     if (isReturningFromBank) return undefined;
+    // Wait for promo validation to resolve before creating the session, so we
+    // never send an unvalidated coupon (and never create two sessions).
+    if (promoCode && promoStatus === "checking") return undefined;
 
     let cancelled = false;
     setClientSecret(null);
@@ -356,11 +305,13 @@ export default function CheckoutPage() {
     setResumeUrl("");
     setLoading(true);
 
+    const includeCoupon = promoCode && promoStatus === "valid";
+
     api
       .post("/billing/checkout", {
         plan_id: planId,
         origin_url: window.location.origin,
-        ...(promoCode ? { coupon_code: promoCode } : {}),
+        ...(includeCoupon ? { coupon_code: promoCode } : {}),
       })
       .then(({ data }) => {
         if (cancelled) return;
@@ -379,34 +330,11 @@ export default function CheckoutPage() {
       });
 
     return () => { cancelled = true; };
-  }, [isReturningFromBank, planId, promoCode]);
+  }, [isReturningFromBank, planId, promoCode, promoStatus]);
 
-  useEffect(() => {
-    if (!promoCode) {
-      setPromoBanner(null);
-      return undefined;
-    }
-
-    let cancelled = false;
-    api.get("/content/promo-banner")
-      .then(({ data }) => {
-        if (cancelled) return;
-        if ((data?.promo_code || "").toUpperCase() === promoCode.toUpperCase()) {
-          setPromoBanner(data);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setPromoBanner(null);
-      });
-
-    return () => { cancelled = true; };
-  }, [promoCode]);
-
-  const checkoutOptions = clientSecret
-    ? { clientSecret, elementsOptions: { appearance: STRIPE_APPEARANCE } }
-    : null;
-  const promoPreview = promoCode && planId.endsWith("_yearly")
-    ? discountedMoneyLabel(plan.price, promoBanner, planId)
+  // Discount preview is shown ONLY for a backend-validated promo.
+  const promoPreview = promoValid && planId.endsWith("_yearly")
+    ? discountedMoneyLabel(plan.price, promoInfo, planId)
     : "";
 
   function applyPromoFromCheckout() {
@@ -523,11 +451,45 @@ export default function CheckoutPage() {
                 )}
               </div>
 
-              {promoCode && (
-                <div className="mb-5 rounded-xl border border-[#D26D53]/35 bg-[#3A1B12] p-3 text-sm text-[#F7D2C7]">
+              {/* Checking */}
+              {promoCode && promoStatus === "checking" && (
+                <div className="mb-5 rounded-xl border border-[#D9D4C8] bg-[#FAF9F6] p-3 text-sm text-[#65635C] flex items-center gap-2">
+                  <Loader2 size={14} className="animate-spin text-[#D26D53]" />
+                  Checking promo code {promoCode.toUpperCase()}…
+                </div>
+              )}
+
+              {/* Valid — only a backend-validated code reaches here */}
+              {promoValid && (
+                <div className="mb-5 rounded-xl border border-[#2F6B45]/40 bg-[#11271A] p-3 text-sm text-[#BFE7CB]">
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="font-semibold text-[#FAF9F6] inline-flex items-center gap-1.5">
+                      <CheckCircle2 size={14} className="text-[#7FD89B]" />
+                      Promo code {promoCode.toUpperCase()} applied
+                    </p>
+                    <button
+                      type="button"
+                      onClick={removePromoFromCheckout}
+                      className="text-[11px] font-bold uppercase tracking-wider text-[#BFE7CB] hover:text-white"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                  {(promoInfo?.discount_display || promoPreview) && (
+                    <p className="mt-1 text-xs leading-relaxed">
+                      {promoInfo?.discount_display || ""}
+                      {promoPreview ? ` Estimated first payment: ${promoPreview}.` : ""}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Invalid — code rejected by the server; checkout continues at full price */}
+              {promoCode && promoStatus === "invalid" && (
+                <div className="mb-5 rounded-xl border border-[#D26D53]/40 bg-[#3A1B12] p-3 text-sm text-[#F7D2C7]">
                   <div className="flex items-start justify-between gap-3">
                     <p className="font-semibold text-[#FAF9F6]">
-                      Promo code {promoCode.toUpperCase()} applied
+                      {promoError || "That promo code is not valid."}
                     </p>
                     <button
                       type="button"
@@ -538,9 +500,7 @@ export default function CheckoutPage() {
                     </button>
                   </div>
                   <p className="mt-1 text-xs leading-relaxed">
-                    {promoBanner?.discount_display || "50% off first 3 months"}
-                    {promoBanner?.plan_scope === "yearly" ? " for eligible yearly plans." : "."}
-                    {promoPreview ? ` Estimated first payment: ${promoPreview}.` : ""}
+                    You can still subscribe at the regular price below.
                   </p>
                 </div>
               )}
@@ -602,15 +562,13 @@ export default function CheckoutPage() {
                 </div>
               )}
 
-              {!loading && clientSecret && checkoutOptions && (
-                <CheckoutElementsProvider stripe={stripePromise} options={checkoutOptions}>
-                  <PaymentForm
-                    planId={planId}
-                    planPrice={promoPreview ? `${promoPreview} first year` : plan.price}
-                    sessionId={sessionId}
-                    onSuccess={handleSuccess}
-                  />
-                </CheckoutElementsProvider>
+              {!loading && clientSecret && stripePromiseRef.current && (
+                <EmbeddedPayment
+                  clientSecret={clientSecret}
+                  sessionId={sessionId}
+                  stripePromise={stripePromiseRef.current}
+                  onSuccess={handleSuccess}
+                />
               )}
 
               <div className="mt-6 flex items-center gap-2 text-xs text-[#65635C]">

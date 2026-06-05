@@ -354,6 +354,10 @@ async def billing_create_checkout(
                 **sess_kwargs,
             )
 
+    except HTTPException:
+        # Promo validation (and other deliberate 4xx) must reach the client with
+        # their real status + message — never get masked as a generic 502.
+        raise
     except stripe_sdk.error.InvalidRequestError as e:
         # Coupon not found or expired — give a user-friendly message
         err_str = str(e).lower()
@@ -397,6 +401,49 @@ async def billing_create_checkout(
         "client_secret": sess.client_secret,
         "session_id":    sess.id,
         "mode":          "subscription",
+    }
+
+
+# ── Promo validation — single source of truth for the frontend ───────────────
+class ValidatePromoRequest(BaseModel):
+    code:    str
+    plan_id: str
+
+
+@router.post("/billing/validate-promo")
+async def billing_validate_promo(
+    payload: ValidatePromoRequest,
+    user: User = Depends(get_current_user),
+):
+    """
+    Authoritatively validate a promo code for a given plan BEFORE checkout.
+    The frontend must call this and only show a discount when valid=True.
+    Runs the exact same checks the checkout endpoint enforces:
+      1. Code matches an enabled, in-window admin promo banner
+      2. The code exists as an active Stripe promotion code
+      3. The Stripe coupon's terms match the advertised offer
+    Raises 400 with a specific reason if any check fails.
+    """
+    code = (payload.code or "").strip().upper()
+    if not code:
+        raise HTTPException(status_code=400, detail="Enter a promo code.")
+    if payload.plan_id not in PLANS:
+        raise HTTPException(status_code=400, detail="Unknown plan.")
+
+    # 1) Admin gating — this raises 400 if the code isn't the live published promo
+    promo = await _validate_published_promo(code, payload.plan_id)
+    # 2) Must be a real, active Stripe promotion code
+    promotion_code = await _stripe_promotion_code(code)
+    # 3) Stripe coupon terms must match the advertised offer
+    _validate_stripe_promotion_terms(promotion_code, promo, payload.plan_id)
+
+    return {
+        "valid":            True,
+        "promo_code":       code,
+        "discount_display": promo.get("discount_display") or "",
+        "plan_scope":       (promo.get("plan_scope") or "all"),
+        "required_percent_off":     promo.get("required_percent_off"),
+        "required_duration_months": promo.get("required_duration_months"),
     }
 
 
@@ -950,8 +997,13 @@ async def _resume_open_checkout_session(user_id: str, requested_plan_id: str) ->
 
     session_status = stripe_value(sess, "status", "") or ""
     payment_status = stripe_value(sess, "payment_status", "") or ""
+    session_ui_mode = stripe_value(sess, "ui_mode", "") or ""
 
-    if session_status == "open" and payment_status != "paid":
+    # Only resume sessions created with the CURRENT integration (embedded).
+    # A session created under an older ui_mode hands back a client_secret that
+    # the current <EmbeddedCheckout> frontend can't use — which manifests as a
+    # checkout that spins forever. Discard it so a fresh session is created.
+    if session_status == "open" and payment_status != "paid" and session_ui_mode == "embedded":
         client_secret = stripe_value(sess, "client_secret", None)
         if client_secret:
             return {
@@ -960,6 +1012,14 @@ async def _resume_open_checkout_session(user_id: str, requested_plan_id: str) ->
                 "mode": "subscription",
                 "reused_existing": True,
             }
+        return None
+
+    # Stale / mismatched session — mark the local record so we stop resuming it.
+    if session_ui_mode and session_ui_mode != "embedded":
+        await db.payment_transactions.update_one(
+            {"session_id": tx["session_id"]},
+            {"$set": {"payment_status": "expired", "status": "stale_ui_mode"}},
+        )
         return None
 
     # Keep our local audit trail in sync when the session can no longer be used.
