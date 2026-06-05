@@ -142,6 +142,7 @@ export default function PricingPage() {
   const [billingCycle, setBillingCycle] = useState("monthly");
   const [showComparison, setShowComparison] = useState(false);
   const [activePromo, setActivePromo] = useState(null);
+  const [promoInput, setPromoInput] = useState("");
 
   // Midcycle switch confirmation state
   const [switchTarget, setSwitchTarget] = useState(null); // { plan, planId, isUpgrade }
@@ -166,15 +167,41 @@ export default function PricingPage() {
         plan_scope: "yearly",
         allowed_plan_ids: YEARLY_PROMO_PLAN_IDS,
       });
+      setPromoInput(code.toUpperCase());
     }
   }, []);
 
   const handlePromo = useCallback((promo) => {
     setActivePromo(promo);
+    setPromoInput(promo?.promo_code || "");
     if ((promo?.plan_scope || "").toLowerCase() === "yearly") {
       setBillingCycle("yearly");
     }
   }, []);
+
+  function applyManualPromo() {
+    const code = promoInput.trim().toUpperCase();
+    if (!code) {
+      toast.info("Enter a promo code first.");
+      return;
+    }
+    setActivePromo({
+      promo_code: code,
+      discount_display: "Promo discount",
+      plan_scope: "yearly",
+      allowed_plan_ids: YEARLY_PROMO_PLAN_IDS,
+    });
+    localStorage.setItem("petbill_active_promo_code", code);
+    setBillingCycle("yearly");
+    toast.success("Promo code added. It will be checked at checkout.");
+  }
+
+  function clearManualPromo() {
+    setActivePromo(null);
+    setPromoInput("");
+    localStorage.removeItem("petbill_active_promo_code");
+    toast.info("Promo code removed.");
+  }
 
   const currentPlanId  = billing?.plan_id || "free";
   const currentTier    = PLAN_TIER[currentPlanId] ?? 0;
@@ -438,12 +465,55 @@ export default function PricingPage() {
         </button>
       </div>
 
-      {activePromoCode && (
-        <div className="rounded-2xl border border-[#D26D53]/35 bg-[#3A1B12] px-4 py-3 text-sm text-[#F7D2C7]">
-          <span className="font-semibold text-[#FAF9F6]">{activePromoCode}</span>{" "}
-          {activePromo?.discount_display || "50% off first 3 months"} applies to eligible yearly plans at checkout.
+      <div className="rounded-2xl border border-[#3A3F38] bg-[#171C1A] p-4 text-sm text-[#D7D2C7]">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0">
+            <label htmlFor="pricing-promo-code" className="text-[10px] uppercase tracking-[0.22em] text-[#D26D53] font-bold">
+              Promo code
+            </label>
+            <div className="mt-2 flex flex-col sm:flex-row gap-2">
+              <input
+                id="pricing-promo-code"
+                value={promoInput}
+                onChange={(e) => setPromoInput(e.target.value.toUpperCase())}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") applyManualPromo();
+                }}
+                placeholder="Enter code"
+                className="min-h-[44px] w-full sm:w-64 rounded-xl border border-[#3A3F38] bg-[#101412] px-3 text-sm font-semibold text-[#FAF9F6] placeholder:text-[#8A887F] outline-none focus:border-[#D26D53]"
+              />
+              <button
+                type="button"
+                onClick={applyManualPromo}
+                className="min-h-[44px] rounded-xl bg-[#D26D53] px-4 text-sm font-bold text-white hover:bg-[#B94F37] transition"
+              >
+                Apply
+              </button>
+            </div>
+          </div>
+
+          {activePromoCode && (
+            <button
+              type="button"
+              onClick={clearManualPromo}
+              className="text-xs font-semibold text-[#F7D2C7] hover:text-white transition"
+            >
+              Remove code
+            </button>
+          )}
         </div>
-      )}
+
+        <div className="mt-3 border-t border-[#3A3F38] pt-3">
+          {activePromoCode ? (
+            <p>
+              <span className="font-semibold text-[#FAF9F6]">{activePromoCode}</span>{" "}
+              {activePromo?.discount_display || "Promo discount"} applies to eligible yearly plans after Stripe confirms it.
+            </p>
+          ) : (
+            <p>Active yearly promos auto-load when the banner is live. You can also enter a code here.</p>
+          )}
+        </div>
+      </div>
 
       {isSubscribed && currentPlanId.endsWith("_monthly") && (
         <SwitchToAnnualBanner

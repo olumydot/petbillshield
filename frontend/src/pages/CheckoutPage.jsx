@@ -262,6 +262,11 @@ export default function CheckoutPage() {
   const [initError,    setInitError]    = useState("");
   const [resumeUrl,    setResumeUrl]    = useState("");
   const [promoBanner,  setPromoBanner]  = useState(null);
+  const [promoInput,   setPromoInput]   = useState(promoCode.toUpperCase());
+
+  useEffect(() => {
+    setPromoInput(promoCode.toUpperCase());
+  }, [promoCode]);
 
   const handleSuccess = useCallback(() => {
     clearBillingCache();
@@ -369,6 +374,30 @@ export default function CheckoutPage() {
     ? { clientSecret, elementsOptions: { appearance: STRIPE_APPEARANCE } }
     : null;
 
+  function applyPromoFromCheckout() {
+    const code = promoInput.trim().toUpperCase();
+    const params = new URLSearchParams(searchParams);
+    params.delete("checkout");
+    params.delete("payment_status");
+    params.delete("session_id");
+    if (code) {
+      params.set("promo", code);
+    } else {
+      params.delete("promo");
+    }
+    navigate(`/dashboard/checkout?${params.toString()}`, { replace: true });
+  }
+
+  function removePromoFromCheckout() {
+    const params = new URLSearchParams(searchParams);
+    params.delete("promo");
+    params.delete("checkout");
+    params.delete("payment_status");
+    params.delete("session_id");
+    setPromoInput("");
+    navigate(`/dashboard/checkout?${params.toString()}`, { replace: true });
+  }
+
   if (isReturningFromBank && loading) {
     return (
       <div className="fixed inset-0 bg-[#FAF9F6] flex items-center justify-center p-8">
@@ -447,15 +476,52 @@ export default function CheckoutPage() {
 
               {promoCode && (
                 <div className="mb-5 rounded-xl border border-[#D26D53]/35 bg-[#3A1B12] p-3 text-sm text-[#F7D2C7]">
-                  <p className="font-semibold text-[#FAF9F6]">
-                    Promo code {promoCode.toUpperCase()} applied
-                  </p>
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="font-semibold text-[#FAF9F6]">
+                      Promo code {promoCode.toUpperCase()} applied
+                    </p>
+                    <button
+                      type="button"
+                      onClick={removePromoFromCheckout}
+                      className="text-[11px] font-bold uppercase tracking-wider text-[#F7D2C7] hover:text-white"
+                    >
+                      Remove
+                    </button>
+                  </div>
                   <p className="mt-1 text-xs leading-relaxed">
                     {promoBanner?.discount_display || "50% off first 3 months"}
                     {promoBanner?.plan_scope === "yearly" ? " for eligible yearly plans." : "."}
                   </p>
                 </div>
               )}
+
+              <div className="mb-5 rounded-xl border border-[#D9D4C8] bg-[#FAF9F6] p-3">
+                <label htmlFor="checkout-promo-code" className="text-[10px] uppercase tracking-[0.2em] text-[#8A887F] font-bold">
+                  Have a promo code?
+                </label>
+                <div className="mt-2 flex flex-col sm:flex-row gap-2">
+                  <input
+                    id="checkout-promo-code"
+                    value={promoInput}
+                    onChange={(e) => setPromoInput(e.target.value.toUpperCase())}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") applyPromoFromCheckout();
+                    }}
+                    placeholder="Enter code"
+                    className="min-h-[42px] flex-1 rounded-lg border border-[#D9D4C8] bg-white px-3 text-sm font-semibold text-[#2D2C28] placeholder:text-[#8A887F] outline-none focus:border-[#D26D53]"
+                  />
+                  <button
+                    type="button"
+                    onClick={applyPromoFromCheckout}
+                    className="min-h-[42px] rounded-lg bg-[#2D2C28] px-4 text-sm font-bold text-[#FAF9F6] hover:bg-[#3F3E39] transition"
+                  >
+                    Apply
+                  </button>
+                </div>
+                <p className="mt-2 text-xs text-[#65635C]">
+                  Codes are verified before payment. If a promo has ended or does not match this plan, we will show you here.
+                </p>
+              </div>
 
               {loading && (
                 <div className="py-16 flex justify-center">
@@ -466,6 +532,15 @@ export default function CheckoutPage() {
               {!loading && initError && (
                 <div className="rounded-xl bg-[#FEF0EE] border border-[#F2C5B7] p-4 text-sm text-[#8C2D14] space-y-3">
                   <p>{initError}</p>
+                  {promoCode && (
+                    <button
+                      type="button"
+                      onClick={removePromoFromCheckout}
+                      className="inline-flex items-center rounded-lg border border-[#D26D53]/35 px-3 py-2 text-sm font-semibold text-[#8C2D14] hover:bg-white/50 transition-colors"
+                    >
+                      Remove promo code
+                    </button>
+                  )}
                   {resumeUrl && (
                     <a
                       href={resumeUrl}
