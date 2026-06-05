@@ -147,11 +147,22 @@ function percentFromPromo(promo) {
   return 50;
 }
 
-function discountedMoneyLabel(label, promo) {
+function durationMonthsFromPromo(promo) {
+  const explicit = Number(promo?.required_duration_months);
+  if (Number.isFinite(explicit) && explicit > 0) return explicit;
+  const display = String(promo?.discount_display || "");
+  const match = display.match(/first\s+(\d+)\s+months?/i);
+  if (match) return Number(match[1]);
+  return 3;
+}
+
+function discountedMoneyLabel(label, promo, planId = "") {
   const amount = moneyFromLabel(label);
   const percent = percentFromPromo(promo);
   if (!amount || !percent) return label;
-  return `$${(amount * (1 - percent / 100)).toFixed(2)}`;
+  const discountMonths = planId.endsWith("_yearly") ? durationMonthsFromPromo(promo) : 12;
+  const discount = amount * (percent / 100) * (discountMonths / 12);
+  return `$${Math.max(0, amount - discount).toFixed(2)}`;
 }
 
 export default function PricingPage() {
@@ -187,6 +198,8 @@ export default function PricingPage() {
         discount_display: "50% off first 3 months",
         plan_scope: "yearly",
         allowed_plan_ids: YEARLY_PROMO_PLAN_IDS,
+        required_percent_off: 50,
+        required_duration_months: 3,
       });
       setPromoInput(code.toUpperCase());
     }
@@ -212,6 +225,7 @@ export default function PricingPage() {
       plan_scope: "yearly",
       allowed_plan_ids: YEARLY_PROMO_PLAN_IDS,
       required_percent_off: 50,
+      required_duration_months: 3,
     });
     localStorage.setItem("petbill_active_promo_code", code);
     setBillingCycle("yearly");
@@ -731,7 +745,7 @@ function PriceCard({
     (promoScope !== "yearly" || currentPlanId.endsWith("_yearly")) &&
     (promoScope !== "monthly" || currentPlanId.endsWith("_monthly")) &&
     (promoAllowedPlans.length === 0 || promoAllowedPlans.includes(currentPlanId));
-  const discountedPrice = promoApplies ? discountedMoneyLabel(price, activePromo) : "";
+  const discountedPrice = promoApplies ? discountedMoneyLabel(price, activePromo, currentPlanId) : "";
 
   const isHigher = p.tier > currentTier;
   const isLower = p.tier < currentTier && p.tier > 0;
@@ -959,7 +973,7 @@ function PriceCard({
             >
               {discountedPrice}
             </span>
-            <span className={`text-sm mb-1 ${cs.sub}`}>today</span>
+            <span className={`text-sm mb-1 ${cs.sub}`}>first year</span>
             <span className={`text-sm mb-1 line-through opacity-65 ${cs.sub}`}>
               {price}
             </span>

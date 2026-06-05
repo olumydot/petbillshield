@@ -105,22 +105,47 @@ async def _stripe_promotion_code(code: str):
     return codes.data[0]
 
 
-def _validate_stripe_promotion_terms(promotion_code, promo: dict) -> None:
+def _validate_stripe_promotion_terms(promotion_code, promo: dict, plan_id: str) -> None:
     coupon = getattr(promotion_code, "coupon", None)
     if not coupon:
         raise HTTPException(status_code=400, detail="That promo code is invalid or has expired.")
 
     required_percent = promo.get("required_percent_off")
+    required_months = promo.get("required_duration_months")
+    annual_equivalent = (
+        bool(required_percent)
+        and bool(required_months)
+        and (plan_id or "").endswith("_yearly")
+        and int(required_months or 0) < 12
+    )
+
     if required_percent:
         percent_off = getattr(coupon, "percent_off", None)
-        if percent_off is None or float(percent_off) != float(required_percent):
+        expected_percent = (
+            float(required_percent) * (int(required_months or 0) / 12)
+            if annual_equivalent
+            else float(required_percent)
+        )
+        if percent_off is None or round(float(percent_off), 4) != round(expected_percent, 4):
+            detail = (
+                f"For yearly plans, create this Stripe coupon as {expected_percent:g}% off once "
+                f"to equal {required_percent}% off the first {required_months} months."
+                if annual_equivalent
+                else f"That promo must be {required_percent}% off to match this offer."
+            )
             raise HTTPException(
                 status_code=400,
-                detail=f"That promo must be {required_percent}% off to match this offer.",
+                detail=detail,
             )
 
-    required_months = promo.get("required_duration_months")
-    if required_months:
+    if annual_equivalent:
+        duration = getattr(coupon, "duration", None)
+        if duration != "once":
+            raise HTTPException(
+                status_code=400,
+                detail="For yearly plans, this Stripe coupon must be one-time so it only discounts the first annual invoice.",
+            )
+    elif required_months:
         duration = getattr(coupon, "duration", None)
         duration_months = getattr(coupon, "duration_in_months", None)
         if duration != "repeating" or int(duration_months or 0) != int(required_months):
@@ -258,7 +283,7 @@ async def billing_create_checkout(
         if payload.coupon_code:
             promo = await _validate_published_promo(payload.coupon_code, payload.plan_id)
             promotion_code = await _stripe_promotion_code(payload.coupon_code)
-            _validate_stripe_promotion_terms(promotion_code, promo)
+            _validate_stripe_promotion_terms(promotion_code, promo, payload.plan_id)
             sess_kwargs["discounts"] = [{"promotion_code": promotion_code.id}]
             metadata["promo_code"] = payload.coupon_code.strip().upper()
 

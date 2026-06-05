@@ -164,11 +164,11 @@ export default function Promos() {
       ...prev,
       name: prev.name || "Yearly launch 50% off first 3 months",
       discount_type: "percent",
-      discount_value: "50",
-      duration: "repeating",
-      duration_months: "3",
+      discount_value: "12.5",
+      duration: "once",
+      duration_months: "",
     }));
-    toast.info("Yearly launch settings filled in. Add your Stripe promo code, then save.");
+    toast.info("Yearly launch settings filled in. Stripe coupon should be 12.5% off once.");
   };
 
   return (

@@ -154,11 +154,22 @@ function percentFromPromo(banner) {
   return 50;
 }
 
-function discountedMoneyLabel(label, banner) {
+function durationMonthsFromPromo(banner) {
+  const explicit = Number(banner?.required_duration_months);
+  if (Number.isFinite(explicit) && explicit > 0) return explicit;
+  const display = String(banner?.discount_display || "");
+  const match = display.match(/first\s+(\d+)\s+months?/i);
+  if (match) return Number(match[1]);
+  return 3;
+}
+
+function discountedMoneyLabel(label, banner, planId = "") {
   const amount = moneyFromLabel(label);
   const percent = percentFromPromo(banner);
   if (!amount || !percent) return "";
-  return `$${(amount * (1 - percent / 100)).toFixed(2)}`;
+  const discountMonths = planId.endsWith("_yearly") ? durationMonthsFromPromo(banner) : 12;
+  const discount = amount * (percent / 100) * (discountMonths / 12);
+  return `$${Math.max(0, amount - discount).toFixed(2)}`;
 }
 
 // ── Inner form (must be inside <CheckoutElementsProvider>) ───────────────────
@@ -395,7 +406,7 @@ export default function CheckoutPage() {
     ? { clientSecret, elementsOptions: { appearance: STRIPE_APPEARANCE } }
     : null;
   const promoPreview = promoCode && planId.endsWith("_yearly")
-    ? discountedMoneyLabel(plan.price, promoBanner)
+    ? discountedMoneyLabel(plan.price, promoBanner, planId)
     : "";
 
   function applyPromoFromCheckout() {
@@ -495,7 +506,7 @@ export default function CheckoutPage() {
                     <span className="font-serif-display text-5xl text-[#D26D53]">
                       {promoPreview}
                     </span>
-                    <span className="text-sm text-[#65635C]">today</span>
+                    <span className="text-sm text-[#65635C]">first year</span>
                     <span className="text-sm text-[#8A887F] line-through">
                       {plan.price}
                     </span>
