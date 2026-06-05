@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PetBill Shield — Logo Downloads</title>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; background:#15140E; color:#D4CEC0; margin:0; padding:40px 20px; }
+  h1 { font-size:22px; color:#EFE8DA; }
+  p  { color:#A8A196; max-width:640px; line-height:1.6; }
+  .grid { display:grid; gap:24px; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); margin-top:28px; }
+  .card { background:#171C1C; border:1px solid #3A4142; border-radius:16px; padding:22px; }
+  .card h2 { font-size:15px; color:#EFE8DA; margin:0 0 4px; }
+  .card small { color:#8A887F; }
+  .preview { background:#FAF9F6; border-radius:12px; padding:20px; display:flex; align-items:center; justify-content:center; min-height:120px; margin:14px 0; }
+  .preview.dark { background:#2D2C28; }
+  .btns { display:flex; flex-wrap:wrap; gap:8px; }
+  button { background:#D26D53; color:#fff; border:0; border-radius:9px; padding:9px 14px; font-size:13px; font-weight:600; cursor:pointer; }
+  button:hover { background:#BD5D44; }
+  button.ghost { background:transparent; border:1px solid #3A4142; color:#D4CEC0; }
+</style>
+</head>
+<body>
+  <h1>PetBill Shield — Brand assets</h1>
+  <p>Each logo below downloads as a transparent PNG. SVG masters are in the same folder
+     (<code>petbillshield-icon.svg</code>, <code>-wordmark.svg</code>, <code>-icon-badge.svg</code>) —
+     use those for print or anywhere that accepts vectors.</p>
+
+  <div class="grid" id="grid"></div>
+
+<script>
+const ICON = `<path d="M16 8.2 C14.4 6.6 12.3 5.5 9.9 5.5 C5.8 5.5 2.5 8.6 2.5 12.7 C2.5 17.2 6.1 21.6 16 27.6 L16 8.2Z" fill="#D26D53"/>
+<path d="M16 8.2 C17.6 6.6 19.7 5.5 22.1 5.5 C26.2 5.5 29.5 8.6 29.5 12.7 C29.5 17.2 25.9 21.6 16 27.6 L16 8.2Z" fill="#EEE8DA"/>
+<path d="M16 8.2 C14.4 6.6 12.3 5.5 9.9 5.5 C5.8 5.5 2.5 8.6 2.5 12.7 C2.5 17.2 6.1 21.6 16 27.6 C25.9 21.6 29.5 17.2 29.5 12.7 C29.5 8.6 26.2 5.5 22.1 5.5 C19.7 5.5 17.6 6.6 16 8.2Z" stroke="#556045" stroke-width="0.9" stroke-linejoin="round"/>
+<line x1="16" y1="8.2" x2="16" y2="27.6" stroke="#556045" stroke-width="0.9" stroke-linecap="round"/>
+<ellipse cx="9.8" cy="20.2" rx="2.3" ry="1.85" fill="white"/>
+<circle cx="7.6" cy="17.1" r="1.08" fill="white"/><circle cx="9.8" cy="16.1" r="1.08" fill="white"/><circle cx="12.0" cy="17.1" r="1.08" fill="white"/>
+<rect x="21.4" y="13.5" width="2.0" height="7.5" rx="1" fill="#556045"/><rect x="18.7" y="16.3" width="7.5" height="2.0" rx="1" fill="#556045"/>`;
+
+const ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">${ICON}</svg>`;
+
+const BADGE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#2D2C28"/><g transform="translate(14,14) scale(1.125)">${ICON}</g></svg>`;
+
+const WORDMARK_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 88"><g transform="translate(8,12) scale(2)">${ICON}</g><text x="84" y="56" font-family="'Cormorant Garamond',Georgia,'Times New Roman',serif" font-size="44" font-weight="600" letter-spacing="-0.5"><tspan fill="#2D2C28">PetBill </tspan><tspan fill="#D26D53">Shield</tspan></text></svg>`;
+
+// bg = solid colour used for the JPEG background (cream brand surface / dark badge)
+const assets = [
+  { name:"Icon",                file:"petbillshield-icon",       svg:ICON_SVG,     w:32,  h:32,  sizes:[256,512,1024], dark:false, bg:"#FAF9F6" },
+  { name:"App / favicon badge", file:"petbillshield-icon-badge", svg:BADGE_SVG,    w:64,  h:64,  sizes:[180,512,1024], dark:true,  bg:"#2D2C28" },
+  { name:"Full wordmark",       file:"petbillshield-wordmark",   svg:WORDMARK_SVG, w:360, h:88,  sizes:[900,1800],     dark:false, bg:"#FAF9F6" },
+];
+
+function downloadRaster(svg, w, h, size, filename, type, bg) {
+  // type: "image/png" (transparent) | "image/jpeg" (needs a bg fill)
+  const scale = size / w;
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(w * scale);
+  canvas.height = Math.round(h * scale);
+  const ctx = canvas.getContext("2d");
+  const img = new Image();
+  const blob = new Blob([svg], { type:"image/svg+xml;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  img.onload = () => {
+    // JPEG has no alpha — paint a background so colours sit on a solid surface
+    if (bg) { ctx.fillStyle = bg; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    URL.revokeObjectURL(url);
+    canvas.toBlob((out) => {
+      const ext = type === "image/jpeg" ? "jpg" : "png";
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(out);
+      a.download = `${filename}-${size}.${ext}`;
+      a.click();
+    }, type, type === "image/jpeg" ? 0.95 : undefined);
+  };
+  img.src = url;
+}
+
+const grid = document.getElementById("grid");
+assets.forEach(a => {
+  const card = document.createElement("div");
+  card.className = "card";
+  const big = a.sizes[a.sizes.length - 1]; // largest size for JPEG
+  card.innerHTML = `<h2>${a.name}</h2><small>SVG master: ${a.file}.svg · JPEG on ${a.bg}</small>
+    <div class="preview ${a.dark ? "dark":""}">${a.svg.replace("<svg ", `<svg style="max-width:${a.w>100?220:90}px;max-height:90px" `)}</div>
+    <div class="btns">
+      ${a.sizes.map(s=>`<button data-t="png" data-s="${s}">PNG ${s}</button>`).join("")}
+      <button data-t="jpg" data-s="${big}">JPEG ${big}</button>
+      <a href="${a.file}.svg" download><button class="ghost">SVG</button></a>
+    </div>`;
+  grid.appendChild(card);
+  card.querySelectorAll("button[data-s]").forEach(b => {
+    b.onclick = () => {
+      const isJpg = b.dataset.t === "jpg";
+      downloadRaster(a.svg, a.w, a.h, +b.dataset.s, a.file,
+        isJpg ? "image/jpeg" : "image/png", isJpg ? a.bg : null);
+    };
+  });
+});
+</script>
+</body>
+</html>

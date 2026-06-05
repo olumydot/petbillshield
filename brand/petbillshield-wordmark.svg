@@ -1,0 +1,19 @@
+<svg width="900" height="220" viewBox="0 0 360 88" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="PetBill Shield logo">
+  <!-- Icon (scaled to 64px, vertically centered) -->
+  <g transform="translate(8, 12) scale(2)">
+    <path d="M16 8.2 C14.4 6.6 12.3 5.5 9.9 5.5 C5.8 5.5 2.5 8.6 2.5 12.7 C2.5 17.2 6.1 21.6 16 27.6 L16 8.2Z" fill="#D26D53"/>
+    <path d="M16 8.2 C17.6 6.6 19.7 5.5 22.1 5.5 C26.2 5.5 29.5 8.6 29.5 12.7 C29.5 17.2 25.9 21.6 16 27.6 L16 8.2Z" fill="#EEE8DA"/>
+    <path d="M16 8.2 C14.4 6.6 12.3 5.5 9.9 5.5 C5.8 5.5 2.5 8.6 2.5 12.7 C2.5 17.2 6.1 21.6 16 27.6 C25.9 21.6 29.5 17.2 29.5 12.7 C29.5 8.6 26.2 5.5 22.1 5.5 C19.7 5.5 17.6 6.6 16 8.2Z" stroke="#556045" stroke-width="0.9" stroke-linejoin="round"/>
+    <line x1="16" y1="8.2" x2="16" y2="27.6" stroke="#556045" stroke-width="0.9" stroke-linecap="round"/>
+    <ellipse cx="9.8" cy="20.2" rx="2.3" ry="1.85" fill="white"/>
+    <circle cx="7.6" cy="17.1" r="1.08" fill="white"/>
+    <circle cx="9.8" cy="16.1" r="1.08" fill="white"/>
+    <circle cx="12.0" cy="17.1" r="1.08" fill="white"/>
+    <rect x="21.4" y="13.5" width="2.0" height="7.5" rx="1" fill="#556045"/>
+    <rect x="18.7" y="16.3" width="7.5" height="2.0" rx="1" fill="#556045"/>
+  </g>
+  <!-- Wordmark text. Uses Cormorant Garamond if available, else a serif fallback. -->
+  <text x="84" y="56" font-family="'Cormorant Garamond', Georgia, 'Times New Roman', serif" font-size="44" font-weight="600" letter-spacing="-0.5">
+    <tspan fill="#2D2C28">PetBill </tspan><tspan fill="#D26D53">Shield</tspan>
+  </text>
+</svg>
