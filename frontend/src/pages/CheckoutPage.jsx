@@ -606,7 +606,7 @@ export default function CheckoutPage() {
                 <CheckoutElementsProvider stripe={stripePromise} options={checkoutOptions}>
                   <PaymentForm
                     planId={planId}
-                    planPrice={plan.price}
+                    planPrice={promoPreview ? `${promoPreview} first year` : plan.price}
                     sessionId={sessionId}
                     onSuccess={handleSuccess}
                   />
