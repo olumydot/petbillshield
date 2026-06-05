@@ -271,6 +271,52 @@ async def billing_create_checkout(
             stripe_customer_id,
         )
 
+        # ── Authoritative double-billing guard ──────────────────────────────
+        # Ask Stripe (not our local DB) whether this customer already has a
+        # live subscription. This closes the window where a paid user whose
+        # local record never flipped to "active" could check out a second time.
+        existing_sub = await _stripe_blocking_subscription(stripe_customer_id)
+        if existing_sub:
+            existing_status = stripe_value(existing_sub, "status", "")
+            # Self-heal: sync our DB to Stripe's truth so the UI unlocks too.
+            try:
+                price_id = existing_sub["items"]["data"][0]["price"]["id"]
+                healed_plan = _PRICE_TO_PLAN.get(price_id)
+                if healed_plan and existing_status in ("active", "trialing"):
+                    pe = stripe_value(existing_sub, "current_period_end", None)
+                    exp = (
+                        datetime.fromtimestamp(int(pe), tz=timezone.utc).isoformat()
+                        if pe else None
+                    )
+                    await _grant_entitlement(
+                        user_id=user.user_id,
+                        plan_id=healed_plan,
+                        stripe_customer_id=stripe_customer_id,
+                        stripe_subscription_id=stripe_value(existing_sub, "id", None),
+                        expires_at_override=exp,
+                    )
+                    await db.users.update_one(
+                        {"user_id": user.user_id},
+                        {"$set": {"subscription_status": "active"}, "$unset": {"pending_plan_id": ""}},
+                    )
+            except Exception as heal_err:
+                logger.warning(f"double-bill guard self-heal failed: {heal_err}")
+
+            if existing_status in ("active", "trialing"):
+                raise HTTPException(
+                    status_code=409,
+                    detail="You already have an active subscription. Use the Plans page to change your plan instead of subscribing again.",
+                )
+            if existing_status == "incomplete":
+                raise HTTPException(
+                    status_code=409,
+                    detail="You have a payment already in progress. Please complete or cancel it before starting a new one.",
+                )
+            raise HTTPException(
+                status_code=409,
+                detail="Your existing subscription needs payment attention. Please update your billing method before subscribing again.",
+            )
+
         # Build session kwargs — optionally apply a promo/coupon code.
         # ui_mode="embedded" + redirect_on_completion="never" is REQUIRED for the
         # frontend <EmbeddedCheckout> component to fire its onComplete callback
@@ -1174,6 +1220,39 @@ async def _resume_incomplete_subscription(doc: dict, requested_plan_id: str) -> 
         "plan_id": tracked_plan_id or requested_plan_id,
         "reused_existing": True,
     }
+
+
+async def _stripe_blocking_subscription(customer_id: str) -> Optional[dict]:
+    """
+    Authoritative double-billing guard. Asks Stripe directly whether this
+    customer already has a subscription that should block a new checkout.
+    Returns the offending subscription dict, or None if it's safe to proceed.
+
+    This does NOT trust the local DB flag (which can be stale if a webhook or
+    onComplete was missed) — it is the source of truth that prevents a user
+    from ever being billed twice for overlapping subscriptions.
+    """
+    if not customer_id:
+        return None
+    try:
+        subs = await asyncio.to_thread(
+            stripe_sdk.Subscription.list,
+            customer=customer_id,
+            status="all",
+            limit=20,
+        )
+    except Exception as e:
+        # If Stripe is unreachable, fail OPEN is risky (double-bill) but failing
+        # closed blocks legitimate first-time buyers. We log and allow, because
+        # the post-payment webhook + local guards still catch most cases.
+        logger.warning(f"double-bill guard: could not list subscriptions for {customer_id}: {e}")
+        return None
+
+    blocking_states = {"active", "trialing", "past_due", "unpaid", "incomplete"}
+    for s in subs.data:
+        if stripe_value(s, "status", "") in blocking_states:
+            return s
+    return None
 
 
 def _subscription_creation_conflict_detail(doc: dict) -> Optional[str]:
