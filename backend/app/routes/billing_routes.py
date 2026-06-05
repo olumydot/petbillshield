@@ -271,13 +271,17 @@ async def billing_create_checkout(
             stripe_customer_id,
         )
 
-        # Build session kwargs — optionally apply a promo/coupon code
+        # Build session kwargs — optionally apply a promo/coupon code.
+        # ui_mode="embedded" + redirect_on_completion="never" is REQUIRED for the
+        # frontend <EmbeddedCheckout> component to fire its onComplete callback
+        # (instead of redirecting). Without this the payment succeeds on Stripe's
+        # side but the browser never learns, so the modal spins forever.
         sess_kwargs: dict = dict(
             customer=stripe_customer_id,
             mode="subscription",
             line_items=[{"price": plan["stripe_price_id"], "quantity": 1}],
-            ui_mode="elements",
-            return_url=f"{origin}/dashboard/checkout?plan={payload.plan_id}&checkout=success&session_id={{CHECKOUT_SESSION_ID}}",
+            ui_mode="embedded",
+            redirect_on_completion="never",
             metadata=metadata,
         )
         if payload.coupon_code:
