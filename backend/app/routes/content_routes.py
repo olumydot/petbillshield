@@ -16,17 +16,20 @@ _BANNER_KEY = "promo_banner"
 
 _DEFAULT_BANNER = {
     "enabled": False,
-    "title": "",
-    "body": "",
+    "title": "Yearly launch offer",
+    "body": "50% off your first 3 months on any yearly plan.",
     "promo_code": "",
-    "discount_display": "",
-    "cta_text": "View plans",
+    "discount_display": "50% off first 3 months",
+    "cta_text": "View yearly plans",
     "cta_href": "/dashboard/pricing",
-    "style": "warning",
+    "style": "primary",
     "starts_at": "",
     "expires_at": "",
     "display_pages": ["landing", "pricing", "billing"],
-    "allowed_plan_ids": [],
+    "allowed_plan_ids": ["vault_yearly", "family_yearly", "rescue_yearly"],
+    "plan_scope": "yearly",
+    "required_percent_off": 50,
+    "required_duration_months": 3,
 }
 
 
@@ -45,6 +48,16 @@ def _normalize_banner(payload: dict) -> dict:
     data["style"] = data.get("style") if data.get("style") in ("warning", "success", "primary", "dark") else "warning"
     data["display_pages"] = _as_list(data.get("display_pages")) or _DEFAULT_BANNER["display_pages"]
     data["allowed_plan_ids"] = _as_list(data.get("allowed_plan_ids"))
+    data["plan_scope"] = data.get("plan_scope") if data.get("plan_scope") in ("all", "monthly", "yearly") else "all"
+    for field in ("required_percent_off", "required_duration_months"):
+        value = data.get(field)
+        if value in ("", None):
+            data[field] = None
+            continue
+        try:
+            data[field] = int(value)
+        except Exception:
+            data[field] = None
     return data
 
 

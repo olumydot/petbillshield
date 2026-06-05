@@ -28,6 +28,8 @@ export default function PromoBanner({ variant = "full", page = "landing", onProm
           return;
         }
         if (Array.isArray(data.display_pages) && !data.display_pages.includes(page)) {
+          localStorage.removeItem(ACTIVE_PROMO_KEY);
+          onPromo?.(null);
           setBanner(false);
           return;
         }

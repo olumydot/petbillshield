@@ -131,6 +131,8 @@ const FEATURE_COMPARISON = [
   { label: "Adoption packets", free: "—", vault: "—", family: "—", rescue: "✓" },
 ];
 
+const YEARLY_PROMO_PLAN_IDS = ["vault_yearly", "family_yearly", "rescue_yearly"];
+
 export default function PricingPage() {
   const { t } = useTranslation();
   const { billing, refresh, switchPlan, cancelSwitch, cancelPlan, reactivatePlan } = useBilling();
@@ -157,11 +159,21 @@ export default function PricingPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const code = params.get("promo") || localStorage.getItem("petbill_active_promo_code");
-    if (code) setActivePromo((prev) => prev || { promo_code: code.toUpperCase() });
+    if (code) {
+      setActivePromo((prev) => prev || {
+        promo_code: code.toUpperCase(),
+        discount_display: "50% off first 3 months",
+        plan_scope: "yearly",
+        allowed_plan_ids: YEARLY_PROMO_PLAN_IDS,
+      });
+    }
   }, []);
 
   const handlePromo = useCallback((promo) => {
     setActivePromo(promo);
+    if ((promo?.plan_scope || "").toLowerCase() === "yearly") {
+      setBillingCycle("yearly");
+    }
   }, []);
 
   const currentPlanId  = billing?.plan_id || "free";
@@ -180,6 +192,15 @@ export default function PricingPage() {
     return billingCycle === "yearly"
       ? `${plan.yearlyPrice}/yr`
       : `${plan.monthlyPrice}/mo`;
+  }
+
+  function promoAppliesToPlan(planId) {
+    if (!activePromoCode || !planId) return false;
+    const scope = (activePromo?.plan_scope || "all").toLowerCase();
+    if (scope === "yearly" && !planId.endsWith("_yearly")) return false;
+    if (scope === "monthly" && !planId.endsWith("_monthly")) return false;
+    const allowed = activePromo?.allowed_plan_ids || [];
+    return allowed.length === 0 || allowed.includes(planId);
   }
 
   /**
@@ -202,7 +223,10 @@ export default function PricingPage() {
       return;
     }
 
-    navigate(`/dashboard/checkout?plan=${selectedPlanId}${activePromoCode ? `&promo=${encodeURIComponent(activePromoCode)}` : ""}`);
+    const promoQuery = promoAppliesToPlan(selectedPlanId)
+      ? `&promo=${encodeURIComponent(activePromoCode)}`
+      : "";
+    navigate(`/dashboard/checkout?plan=${selectedPlanId}${promoQuery}`);
   }
 
   /** Cancels a pending plan downgrade and reverts the subscription. */
@@ -414,6 +438,13 @@ export default function PricingPage() {
         </button>
       </div>
 
+      {activePromoCode && (
+        <div className="rounded-2xl border border-[#D26D53]/35 bg-[#3A1B12] px-4 py-3 text-sm text-[#F7D2C7]">
+          <span className="font-semibold text-[#FAF9F6]">{activePromoCode}</span>{" "}
+          {activePromo?.discount_display || "50% off first 3 months"} applies to eligible yearly plans at checkout.
+        </div>
+      )}
+
       {isSubscribed && currentPlanId.endsWith("_monthly") && (
         <SwitchToAnnualBanner
           currentPlanId={currentPlanId}
@@ -450,6 +481,7 @@ export default function PricingPage() {
               pendingDownAt={pendingDownAt}
               onCancelSwitch={isPending ? handleCancelSwitch : null}
               cancellingSwitch={cancellingSwitch}
+              activePromo={activePromo}
             />
           );
         })}
@@ -476,6 +508,7 @@ export default function PricingPage() {
               onCancelSwitch={isPending ? handleCancelSwitch : null}
               cancellingSwitch={cancellingSwitch}
               wide
+              activePromo={activePromo}
             />
           );
         })}
@@ -588,6 +621,7 @@ function PriceCard({
   pendingDownAt   = null,
   onCancelSwitch  = null,
   cancellingSwitch = false,
+  activePromo = null,
 }) {
   const isFree = !p.monthlyPlanId;
 
@@ -597,6 +631,14 @@ function PriceCard({
     billingCycle === "yearly" ? p.yearlySub || p.sub : p.monthlySub || p.sub;
   const currentPlanId =
     billingCycle === "yearly" ? p.yearlyPlanId : p.monthlyPlanId;
+  const activePromoCode = activePromo?.promo_code || "";
+  const promoScope = (activePromo?.plan_scope || "all").toLowerCase();
+  const promoAllowedPlans = activePromo?.allowed_plan_ids || [];
+  const promoApplies =
+    Boolean(activePromoCode && currentPlanId) &&
+    (promoScope !== "yearly" || currentPlanId.endsWith("_yearly")) &&
+    (promoScope !== "monthly" || currentPlanId.endsWith("_monthly")) &&
+    (promoAllowedPlans.length === 0 || promoAllowedPlans.includes(currentPlanId));
 
   const isHigher = p.tier > currentTier;
   const isLower = p.tier < currentTier && p.tier > 0;
@@ -828,6 +870,12 @@ function PriceCard({
       {!isFree && billingCycle === "yearly" && (
         <p className={`text-xs mt-1.5 font-semibold ${cs.eyebrow}`}>
           Save 2 months with annual billing
+        </p>
+      )}
+
+      {!isFree && promoApplies && (
+        <p className="mt-2 inline-flex w-fit rounded-full border border-[#D26D53]/35 bg-[#3A1B12] px-3 py-1 text-[11px] font-bold text-[#F7D2C7]">
+          {activePromo.discount_display || "50% off first 3 months"} · {activePromoCode}
         </p>
       )}
 

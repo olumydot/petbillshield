@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Plus, Trash2, Loader2, Tag, Check, Eye, EyeOff, Save } from "lucide-react";
+import { Plus, Trash2, Loader2, Tag, Check, Eye, EyeOff, Save, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import ConfirmModal from "@/components/ConfirmModal";
@@ -13,17 +13,20 @@ export default function Promos() {
   const [promoToDeactivate, setPromoToDeactivate] = useState(null);
   const [banner,      setBanner]      = useState({
     enabled: false,
-    title: "",
-    body: "",
+    title: "Yearly launch offer",
+    body: "50% off your first 3 months on any yearly plan.",
     promo_code: "",
-    discount_display: "",
-    cta_text: "View plans",
+    discount_display: "50% off first 3 months",
+    cta_text: "View yearly plans",
     cta_href: "/dashboard/pricing",
-    style: "warning",
+    style: "primary",
     starts_at: "",
     expires_at: "",
     display_pages: ["landing", "pricing", "billing"],
-    allowed_plan_ids: [],
+    allowed_plan_ids: ["vault_yearly", "family_yearly", "rescue_yearly"],
+    plan_scope: "yearly",
+    required_percent_off: 50,
+    required_duration_months: 3,
   });
   const [savingBanner, setSavingBanner] = useState(false);
 
@@ -31,12 +34,14 @@ export default function Promos() {
     name:            "",
     code:            "",
     discount_type:   "percent",
-    discount_value:  "10",
-    duration:        "once",
-    duration_months: "",
+    discount_value:  "50",
+    duration:        "repeating",
+    duration_months: "3",
     max_redemptions: "",
     expires_days:    "",
   });
+
+  const YEARLY_PLAN_IDS = ["vault_yearly", "family_yearly", "rescue_yearly"];
 
   const load = async () => {
     setLoading(true);
@@ -93,8 +98,8 @@ export default function Promos() {
       });
       toast.success("Promo code created!");
       setShowForm(false);
-      setForm({ name: "", code: "", discount_type: "percent", discount_value: "10",
-                duration: "once", duration_months: "", max_redemptions: "", expires_days: "" });
+      setForm({ name: "", code: "", discount_type: "percent", discount_value: "50",
+                duration: "repeating", duration_months: "3", max_redemptions: "", expires_days: "" });
       load();
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Couldn't create promo");
@@ -124,6 +129,33 @@ export default function Promos() {
       className="w-full rounded-xl border border-[#2A2924] bg-[#111] text-[#FAF9F6] text-sm px-3 py-2.5 placeholder:text-[#65635C] focus:outline-none focus:ring-1 focus:ring-[#D26D53]"
     />
   );
+
+  const configureYearlyLaunch = () => {
+    setBanner((prev) => ({
+      ...prev,
+      enabled: true,
+      title: prev.title || "Yearly launch offer",
+      body: prev.body || "50% off your first 3 months on any yearly plan.",
+      discount_display: prev.discount_display || "50% off first 3 months",
+      cta_text: prev.cta_text || "View yearly plans",
+      cta_href: prev.cta_href || "/dashboard/pricing",
+      style: "primary",
+      display_pages: ["landing", "pricing", "billing"],
+      allowed_plan_ids: YEARLY_PLAN_IDS,
+      plan_scope: "yearly",
+      required_percent_off: 50,
+      required_duration_months: 3,
+    }));
+    setForm((prev) => ({
+      ...prev,
+      name: prev.name || "Yearly launch 50% off first 3 months",
+      discount_type: "percent",
+      discount_value: "50",
+      duration: "repeating",
+      duration_months: "3",
+    }));
+    toast.info("Yearly launch settings filled in. Add your Stripe promo code, then save.");
+  };
 
   return (
     <div className="space-y-6">
@@ -157,19 +189,29 @@ export default function Promos() {
             <div className="text-[10px] uppercase tracking-widest text-[#65635C] font-semibold mb-1">Public promo banner</div>
             <h3 className="text-lg font-bold text-[#FAF9F6]">Show or hide the site-wide offer</h3>
             <p className="text-xs text-[#8A887F] mt-1 max-w-2xl">
-              When enabled, this banner can show on the landing page, pricing page, and billing settings. Checkout will only accept the published code for the plans selected here.
+              When enabled, this banner can show on the landing page, pricing page, and billing settings. Checkout only accepts the published code for the plan scope and plans selected here.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => setBanner((b) => ({ ...b, enabled: !b.enabled }))}
-            className={`rounded-xl px-4 py-2 text-xs font-semibold inline-flex items-center gap-2 transition ${
-              banner.enabled ? "bg-[#556045] text-white" : "bg-[#2A2924] text-[#8A887F]"
-            }`}
-          >
-            {banner.enabled ? <Eye size={13} /> : <EyeOff size={13} />}
-            {banner.enabled ? "Available" : "Hidden"}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={configureYearlyLaunch}
+              className="rounded-xl border border-[#D26D53]/40 bg-[#3A1B12] px-4 py-2 text-xs font-semibold text-[#F5B29D] inline-flex items-center gap-2 transition hover:bg-[#4A2116]"
+            >
+              <Sparkles size={13} />
+              Yearly 50% setup
+            </button>
+            <button
+              type="button"
+              onClick={() => setBanner((b) => ({ ...b, enabled: !b.enabled }))}
+              className={`rounded-xl px-4 py-2 text-xs font-semibold inline-flex items-center gap-2 transition ${
+                banner.enabled ? "bg-[#556045] text-white" : "bg-[#2A2924] text-[#8A887F]"
+              }`}
+            >
+              {banner.enabled ? <Eye size={13} /> : <EyeOff size={13} />}
+              {banner.enabled ? "Available" : "Hidden"}
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
@@ -202,6 +244,20 @@ export default function Promos() {
           </Field>
           <Field label="Expires at">
             <Input type="datetime-local" value={(banner.expires_at || "").slice(0, 16)} onChange={e => setBanner({...banner, expires_at: e.target.value})} />
+          </Field>
+          <Field label="Plan scope">
+            <select value={banner.plan_scope || "all"} onChange={e => setBanner({...banner, plan_scope: e.target.value})}
+              className="w-full rounded-xl border border-[#2A2924] bg-[#111] text-[#FAF9F6] text-sm px-3 py-2.5 focus:outline-none focus:ring-1 focus:ring-[#D26D53]">
+              <option value="all">All paid plans</option>
+              <option value="monthly">Monthly plans only</option>
+              <option value="yearly">Yearly plans only</option>
+            </select>
+          </Field>
+          <Field label="Required percent off">
+            <Input type="number" value={banner.required_percent_off || ""} onChange={e => setBanner({...banner, required_percent_off: e.target.value})} placeholder="50" min="1" max="100" />
+          </Field>
+          <Field label="Required duration months">
+            <Input type="number" value={banner.required_duration_months || ""} onChange={e => setBanner({...banner, required_duration_months: e.target.value})} placeholder="3" min="1" />
           </Field>
         </div>
 

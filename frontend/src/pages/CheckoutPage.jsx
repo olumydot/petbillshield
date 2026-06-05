@@ -261,6 +261,7 @@ export default function CheckoutPage() {
   const [loading,      setLoading]      = useState(true);
   const [initError,    setInitError]    = useState("");
   const [resumeUrl,    setResumeUrl]    = useState("");
+  const [promoBanner,  setPromoBanner]  = useState(null);
 
   const handleSuccess = useCallback(() => {
     clearBillingCache();
@@ -343,6 +344,27 @@ export default function CheckoutPage() {
     return () => { cancelled = true; };
   }, [isReturningFromBank, planId, promoCode]);
 
+  useEffect(() => {
+    if (!promoCode) {
+      setPromoBanner(null);
+      return undefined;
+    }
+
+    let cancelled = false;
+    api.get("/content/promo-banner")
+      .then(({ data }) => {
+        if (cancelled) return;
+        if ((data?.promo_code || "").toUpperCase() === promoCode.toUpperCase()) {
+          setPromoBanner(data);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setPromoBanner(null);
+      });
+
+    return () => { cancelled = true; };
+  }, [promoCode]);
+
   const checkoutOptions = clientSecret
     ? { clientSecret, elementsOptions: { appearance: STRIPE_APPEARANCE } }
     : null;
@@ -422,6 +444,18 @@ export default function CheckoutPage() {
                   /{plan.price.split("/")[1]}
                 </span>
               </div>
+
+              {promoCode && (
+                <div className="mb-5 rounded-xl border border-[#D26D53]/35 bg-[#3A1B12] p-3 text-sm text-[#F7D2C7]">
+                  <p className="font-semibold text-[#FAF9F6]">
+                    Promo code {promoCode.toUpperCase()} applied
+                  </p>
+                  <p className="mt-1 text-xs leading-relaxed">
+                    {promoBanner?.discount_display || "50% off first 3 months"}
+                    {promoBanner?.plan_scope === "yearly" ? " for eligible yearly plans." : "."}
+                  </p>
+                </div>
+              )}
 
               {loading && (
                 <div className="py-16 flex justify-center">

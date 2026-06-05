@@ -74,6 +74,7 @@ async def _validate_published_promo(code: str, plan_id: str) -> dict:
     starts_at = _parse_promo_date(promo.get("starts_at"))
     expires_at = _parse_promo_date(promo.get("expires_at"))
     allowed_plan_ids = promo.get("allowed_plan_ids") or []
+    plan_scope = (promo.get("plan_scope") or "all").strip().lower()
 
     if not promo.get("enabled") or (promo.get("promo_code") or "").strip().upper() != normalized:
         raise HTTPException(status_code=400, detail="That promo is not currently available.")
@@ -81,13 +82,17 @@ async def _validate_published_promo(code: str, plan_id: str) -> dict:
         raise HTTPException(status_code=400, detail="That promo is not active yet.")
     if expires_at and expires_at < now:
         raise HTTPException(status_code=400, detail="That promo has expired.")
+    if plan_scope == "yearly" and not (plan_id or "").endswith("_yearly"):
+        raise HTTPException(status_code=400, detail="That promo is only valid for yearly plans.")
+    if plan_scope == "monthly" and not (plan_id or "").endswith("_monthly"):
+        raise HTTPException(status_code=400, detail="That promo is only valid for monthly plans.")
     if allowed_plan_ids and plan_id not in allowed_plan_ids:
         raise HTTPException(status_code=400, detail="That promo is not valid for this plan.")
 
     return promo
 
 
-async def _stripe_promotion_code_id(code: str) -> str:
+async def _stripe_promotion_code(code: str):
     normalized = (code or "").strip().upper()
     codes = await asyncio.to_thread(
         stripe_sdk.PromotionCode.list,
@@ -97,7 +102,32 @@ async def _stripe_promotion_code_id(code: str) -> str:
     )
     if not codes.data:
         raise HTTPException(status_code=400, detail="That promo code is invalid or has expired.")
-    return codes.data[0].id
+    return codes.data[0]
+
+
+def _validate_stripe_promotion_terms(promotion_code, promo: dict) -> None:
+    coupon = getattr(promotion_code, "coupon", None)
+    if not coupon:
+        raise HTTPException(status_code=400, detail="That promo code is invalid or has expired.")
+
+    required_percent = promo.get("required_percent_off")
+    if required_percent:
+        percent_off = getattr(coupon, "percent_off", None)
+        if percent_off is None or float(percent_off) != float(required_percent):
+            raise HTTPException(
+                status_code=400,
+                detail=f"That promo must be {required_percent}% off to match this offer.",
+            )
+
+    required_months = promo.get("required_duration_months")
+    if required_months:
+        duration = getattr(coupon, "duration", None)
+        duration_months = getattr(coupon, "duration_in_months", None)
+        if duration != "repeating" or int(duration_months or 0) != int(required_months):
+            raise HTTPException(
+                status_code=400,
+                detail=f"That promo must apply for the first {required_months} months to match this offer.",
+            )
 
 # -------------------- Billing / Stripe --------------------
 class CheckoutCreateRequest(BaseModel):
@@ -226,9 +256,10 @@ async def billing_create_checkout(
             metadata=metadata,
         )
         if payload.coupon_code:
-            await _validate_published_promo(payload.coupon_code, payload.plan_id)
-            promo_code_id = await _stripe_promotion_code_id(payload.coupon_code)
-            sess_kwargs["discounts"] = [{"promotion_code": promo_code_id}]
+            promo = await _validate_published_promo(payload.coupon_code, payload.plan_id)
+            promotion_code = await _stripe_promotion_code(payload.coupon_code)
+            _validate_stripe_promotion_terms(promotion_code, promo)
+            sess_kwargs["discounts"] = [{"promotion_code": promotion_code.id}]
             metadata["promo_code"] = payload.coupon_code.strip().upper()
 
         try:
