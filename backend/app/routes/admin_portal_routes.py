@@ -185,9 +185,31 @@ async def portal_stats(_: User = Depends(require_admin)):
 #  USERS
 # ═══════════════════════════════════════════════════════════════════════════════
 
+# Subscription-type groupings for admin filtering. A "paid" tier only counts a
+# user when their subscription is currently active; everyone else is "free".
+_PLAN_GROUP_IDS = {
+    "vault":  ["vault_monthly", "vault_yearly"],
+    "family": ["family_monthly", "family_yearly"],
+    "rescue": ["rescue_monthly", "rescue_yearly"],
+}
+_ALL_PAID_PLAN_IDS = [pid for ids in _PLAN_GROUP_IDS.values() for pid in ids]
+
+
+def _plan_group_filter(plan: str) -> dict:
+    """Mongo filter fragment for a subscription-type group."""
+    plan = (plan or "").strip().lower()
+    if plan in _PLAN_GROUP_IDS:
+        return {"plan_id": {"$in": _PLAN_GROUP_IDS[plan]}, "subscription_status": "active"}
+    if plan == "free":
+        # Anyone who is NOT a currently-active paid subscriber.
+        return {"$nor": [{"plan_id": {"$in": _ALL_PAID_PLAN_IDS}, "subscription_status": "active"}]}
+    return {}  # "all" / unknown → no plan filter
+
+
 @router.get("/admin/portal/users")
 async def portal_list_users(
     q:     str = Query(""),
+    plan:  str = Query(""),          # "", "all", "free", "vault", "family", "rescue"
     page:  int = Query(1,  ge=1),
     limit: int = Query(30, ge=1, le=100),
     _: User    = Depends(require_admin),
@@ -199,6 +221,10 @@ async def portal_list_users(
             {"email": {"$regex": q.strip(), "$options": "i"}},
             {"name":  {"$regex": q.strip(), "$options": "i"}},
         ]
+
+    plan_filter = _plan_group_filter(plan)
+    if plan_filter:
+        query = {"$and": [query, plan_filter]} if query else plan_filter
 
     total = await db.users.count_documents(query)
     docs  = await db.users.find(
@@ -214,7 +240,32 @@ async def portal_list_users(
         doc["claim_count"]    = await db.claims.count_documents({"user_id": uid})
         doc["comparison_count"] = await db.estimate_comparisons.count_documents({"user_id": uid})
 
-    return {"users": docs, "pagination": _paginate(total, page, limit)}
+    # Group counts respect the search term but ignore the plan filter, so the
+    # tab badges always show the full breakdown for the current search.
+    search_q: dict = {}
+    if q.strip():
+        search_q["$or"] = [
+            {"email": {"$regex": q.strip(), "$options": "i"}},
+            {"name":  {"$regex": q.strip(), "$options": "i"}},
+        ]
+
+    async def _count(group_filter: dict) -> int:
+        merged = {"$and": [search_q, group_filter]} if search_q and group_filter else (group_filter or search_q or {})
+        return await db.users.count_documents(merged)
+
+    group_counts = {
+        "all":    await _count({}),
+        "free":   await _count(_plan_group_filter("free")),
+        "vault":  await _count(_plan_group_filter("vault")),
+        "family": await _count(_plan_group_filter("family")),
+        "rescue": await _count(_plan_group_filter("rescue")),
+    }
+
+    return {
+        "users": docs,
+        "pagination": _paginate(total, page, limit),
+        "group_counts": group_counts,
+    }
 
 
 @router.get("/admin/portal/users/{user_id}")

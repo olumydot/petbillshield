@@ -9,6 +9,8 @@ function Badge({ children, color = "gray" }) {
     gray:   "bg-[#2A2924] text-[#8A887F]",
     gold:   "bg-[#3D320A] text-[#E6AE2E]",
     red:    "bg-[#3D1010] text-[#F87171]",
+    terracotta: "bg-[#3A1B12] text-[#F0A088]",
+    sage:   "bg-[#1E2B18] text-[#A6C48A]",
   };
   return (
     <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${map[color] || map.gray}`}>
@@ -17,8 +19,28 @@ function Badge({ children, color = "gray" }) {
   );
 }
 
+// Map a user's stored plan to a subscription-type group + display badge.
+function planGroup(user) {
+  const pid = (user?.plan_id || "").toLowerCase();
+  const active = user?.subscription_status === "active";
+  if (active && pid.includes("vault"))  return { key: "vault",  label: "Vault",  color: "terracotta" };
+  if (active && pid.includes("family")) return { key: "family", label: "Family", color: "sage" };
+  if (active && pid.includes("rescue")) return { key: "rescue", label: "Rescue", color: "gold" };
+  return { key: "free", label: "Free", color: "gray" };
+}
+
+const PLAN_FILTERS = [
+  { key: "all",    label: "All" },
+  { key: "free",   label: "Free" },
+  { key: "vault",  label: "Vault" },
+  { key: "family", label: "Family" },
+  { key: "rescue", label: "Rescue" },
+];
+
 export default function Users() {
   const [q,          setQ]          = useState("");
+  const [planFilter, setPlanFilter] = useState("all");
+  const [groupCounts, setGroupCounts] = useState(null);
   const [users,      setUsers]      = useState([]);
   const [pagination, setPagination] = useState(null);
   const [page,       setPage]       = useState(1);
@@ -28,22 +50,32 @@ export default function Users() {
   const [note,       setNote]       = useState("");
   const [savingNote, setSavingNote] = useState(false);
 
-  const load = useCallback(async (search = q, p = page) => {
+  const load = useCallback(async (search = q, p = page, plan = planFilter) => {
     setLoading(true);
     try {
-      const { data } = await api.get("/admin/portal/users", { params: { q: search, page: p, limit: 30 } });
+      const { data } = await api.get("/admin/portal/users", {
+        params: { q: search, plan, page: p, limit: 30 },
+      });
       setUsers(data.users || []);
       setPagination(data.pagination);
+      if (data.group_counts) setGroupCounts(data.group_counts);
     } catch { toast.error("Failed to load users"); }
     finally { setLoading(false); }
-  }, [q, page]);
+  }, [q, page, planFilter]);
 
   useEffect(() => { load(); }, [page]); // eslint-disable-line
   // debounced search
   useEffect(() => {
-    const t = setTimeout(() => { setPage(1); load(q, 1); }, 350);
+    const t = setTimeout(() => { setPage(1); load(q, 1, planFilter); }, 350);
     return () => clearTimeout(t);
   }, [q]); // eslint-disable-line
+
+  // Re-load immediately when the subscription-type filter changes
+  function selectPlanFilter(key) {
+    setPlanFilter(key);
+    setPage(1);
+    load(q, 1, key);
+  }
 
   const openDetail = async (uid) => {
     setSelected(uid);
@@ -87,6 +119,32 @@ export default function Users() {
           />
         </div>
 
+        {/* Group by subscription type */}
+        <div className="flex flex-wrap gap-1.5">
+          {PLAN_FILTERS.map((f) => {
+            const isActive = planFilter === f.key;
+            const count = groupCounts ? groupCounts[f.key] : null;
+            return (
+              <button
+                key={f.key}
+                onClick={() => selectPlanFilter(f.key)}
+                className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition ${
+                  isActive
+                    ? "bg-[#D26D53] border-[#D26D53] text-white"
+                    : "bg-[#1E1D1A] border-[#2A2924] text-[#8A887F] hover:text-[#FAF9F6] hover:border-[#3A3833]"
+                }`}
+              >
+                {f.label}
+                {count != null && (
+                  <span className={`ml-1.5 ${isActive ? "text-white/80" : "text-[#65635C]"}`}>
+                    {count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
         {loading
           ? <div className="text-[#65635C] text-sm animate-pulse py-4">Loading…</div>
           : (
@@ -109,10 +167,10 @@ export default function Users() {
                   <div className="text-xs text-[#65635C] truncate">{u.email}</div>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
+                  {(() => { const g = planGroup(u); return <Badge color={g.color}>{g.label}</Badge>; })()}
                   {u.pet_count > 0      && <Badge color="green">{u.pet_count} pet{u.pet_count !== 1 ? "s" : ""}</Badge>}
                   {u.estimate_count > 0 && <Badge>{u.estimate_count} bills</Badge>}
                   {u.claim_count > 0    && <Badge color="gold">{u.claim_count} claims</Badge>}
-                  {u.auth_provider === "google" && <Badge color="gold">Google</Badge>}
                   <ChevronRight size={12} className="text-[#65635C]" />
                 </div>
               </button>
