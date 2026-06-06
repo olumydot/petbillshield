@@ -3,11 +3,15 @@ import {
   LayoutDashboard, Users, Mail, MessageSquare,
   Send, Tag, FileText, LogOut, ShieldCheck,
   Menu, X, ChevronRight, Lock, Loader2, Eye, EyeOff,
+  DollarSign, CreditCard, Cpu,
 } from "lucide-react";
 import { toast } from "sonner";
 import api, { API } from "@/lib/api";
 
 import Overview  from "./admin/Overview";
+import Revenue   from "./admin/Revenue";
+import Billing   from "./admin/Billing";
+import AiUsage   from "./admin/AiUsage";
 import UsersPage from "./admin/Users";
 import Inbox     from "./admin/Inbox";
 import Feedback  from "./admin/Feedback";
@@ -18,7 +22,10 @@ import Content   from "./admin/Content";
 // ── Nav definition ────────────────────────────────────────────────────────────
 const NAV = [
   { id: "overview",  label: "Overview",        icon: LayoutDashboard },
+  { id: "revenue",   label: "Revenue",          icon: DollarSign      },
+  { id: "billing",   label: "Billing",          icon: CreditCard      },
   { id: "users",     label: "Users",            icon: Users           },
+  { id: "ai_usage",  label: "AI Usage",         icon: Cpu             },
   { id: "inbox",     label: "Inbox",            icon: Mail            },
   { id: "feedback",  label: "Feedback",         icon: MessageSquare   },
   { id: "broadcast", label: "Broadcast",        icon: Send            },
@@ -29,7 +36,10 @@ const NAV = [
 // ── Tab → component map ───────────────────────────────────────────────────────
 const TABS = {
   overview:  <Overview  />,
+  revenue:   <Revenue   />,
+  billing:   <Billing   />,
   users:     <UsersPage />,
+  ai_usage:  <AiUsage   />,
   inbox:     <Inbox     />,
   feedback:  <Feedback  />,
   broadcast: <Broadcast />,
