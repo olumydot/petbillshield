@@ -14,9 +14,10 @@ Sections
 /admin/portal/feedback       — feedback viewer
 """
 from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, EmailStr
 from typing import Optional, List
-import secrets, math, resend
+import secrets, math, resend, csv, io
 
 from app.shared import (
     db, User, require_admin, logger,
@@ -206,10 +207,21 @@ def _plan_group_filter(plan: str) -> dict:
     return {}  # "all" / unknown → no plan filter
 
 
+def _user_sort_spec(sort: str):
+    """Map a sort key to a Mongo sort spec (only doc-level fields)."""
+    return {
+        "recent":  [("created_at", -1)],   # newest first (default)
+        "oldest":  [("created_at",  1)],
+        "name":    [("name", 1), ("email", 1)],
+        "renewal": [("entitlement_expires_at", -1)],
+    }.get((sort or "").strip().lower(), [("created_at", -1)])
+
+
 @router.get("/admin/portal/users")
 async def portal_list_users(
     q:     str = Query(""),
     plan:  str = Query(""),          # "", "all", "free", "vault", "family", "rescue"
+    sort:  str = Query("recent"),    # recent | oldest | name | renewal
     page:  int = Query(1,  ge=1),
     limit: int = Query(30, ge=1, le=100),
     _: User    = Depends(require_admin),
@@ -230,7 +242,7 @@ async def portal_list_users(
     docs  = await db.users.find(
         query,
         {"_id": 0, "password_hash": 0},
-    ).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    ).sort(_user_sort_spec(sort)).skip(skip).limit(limit).to_list(limit)
 
     # Attach basic counts
     for doc in docs:
@@ -266,6 +278,69 @@ async def portal_list_users(
         "pagination": _paginate(total, page, limit),
         "group_counts": group_counts,
     }
+
+
+@router.get("/admin/portal/users/export.csv")
+async def portal_export_users_csv(
+    q:    str = Query(""),
+    plan: str = Query(""),       # all/free/vault/family/rescue
+    sort: str = Query("recent"),
+    _: User   = Depends(require_admin),
+):
+    """Export ALL users matching the current search + subscription-type filter as CSV."""
+    query: dict = {}
+    if q.strip():
+        query["$or"] = [
+            {"email": {"$regex": q.strip(), "$options": "i"}},
+            {"name":  {"$regex": q.strip(), "$options": "i"}},
+        ]
+    plan_filter = _plan_group_filter(plan)
+    if plan_filter:
+        query = {"$and": [query, plan_filter]} if query else plan_filter
+
+    docs = await db.users.find(
+        query, {"_id": 0, "password_hash": 0},
+    ).sort(_user_sort_spec(sort)).to_list(100000)
+
+    def _group_label(d: dict) -> str:
+        pid = (d.get("plan_id") or "").lower()
+        active = d.get("subscription_status") == "active"
+        if active and "vault"  in pid: return "Vault"
+        if active and "family" in pid: return "Family"
+        if active and "rescue" in pid: return "Rescue"
+        return "Free"
+
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow([
+        "name", "email", "subscription_group", "plan_id", "subscription_status",
+        "renews_or_ends", "joined", "auth_provider", "pets", "bills", "claims",
+    ])
+    for d in docs:
+        uid = d["user_id"]
+        w.writerow([
+            d.get("name", ""),
+            d.get("email", ""),
+            _group_label(d),
+            d.get("plan_id", "") or "free",
+            d.get("subscription_status", "") or "",
+            d.get("entitlement_expires_at", "") or "",
+            d.get("created_at", "") or "",
+            d.get("auth_provider", "") or "email",
+            await db.pets.count_documents({"user_id": uid}),
+            await db.estimates.count_documents({"user_id": uid}),
+            await db.claims.count_documents({"user_id": uid}),
+        ])
+
+    buf.seek(0)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d")
+    group = (plan or "all").lower() or "all"
+    filename = f"petbillshield-users-{group}-{stamp}.csv"
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/admin/portal/users/{user_id}")

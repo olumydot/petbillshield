@@ -1,7 +1,14 @@
 import { useState, useEffect, useCallback } from "react";
-import { Search, User, PawPrint, FileSearch, ChevronRight, X, Plus } from "lucide-react";
+import { Search, User, PawPrint, FileSearch, ChevronRight, X, Plus, Download, ArrowDownUp } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
+
+const SORT_OPTIONS = [
+  { key: "recent",  label: "Newest first" },
+  { key: "oldest",  label: "Oldest first" },
+  { key: "name",    label: "Name (A–Z)" },
+  { key: "renewal", label: "Renewal date" },
+];
 
 function Badge({ children, color = "gray" }) {
   const map = {
@@ -40,33 +47,35 @@ const PLAN_FILTERS = [
 export default function Users() {
   const [q,          setQ]          = useState("");
   const [planFilter, setPlanFilter] = useState("all");
+  const [sort,       setSort]       = useState("recent");
   const [groupCounts, setGroupCounts] = useState(null);
   const [users,      setUsers]      = useState([]);
   const [pagination, setPagination] = useState(null);
   const [page,       setPage]       = useState(1);
   const [loading,    setLoading]    = useState(false);
+  const [exporting,  setExporting]  = useState(false);
   const [selected,   setSelected]   = useState(null);   // user detail drawer
   const [detail,     setDetail]     = useState(null);
   const [note,       setNote]       = useState("");
   const [savingNote, setSavingNote] = useState(false);
 
-  const load = useCallback(async (search = q, p = page, plan = planFilter) => {
+  const load = useCallback(async (search = q, p = page, plan = planFilter, sortKey = sort) => {
     setLoading(true);
     try {
       const { data } = await api.get("/admin/portal/users", {
-        params: { q: search, plan, page: p, limit: 30 },
+        params: { q: search, plan, sort: sortKey, page: p, limit: 30 },
       });
       setUsers(data.users || []);
       setPagination(data.pagination);
       if (data.group_counts) setGroupCounts(data.group_counts);
     } catch { toast.error("Failed to load users"); }
     finally { setLoading(false); }
-  }, [q, page, planFilter]);
+  }, [q, page, planFilter, sort]);
 
   useEffect(() => { load(); }, [page]); // eslint-disable-line
   // debounced search
   useEffect(() => {
-    const t = setTimeout(() => { setPage(1); load(q, 1, planFilter); }, 350);
+    const t = setTimeout(() => { setPage(1); load(q, 1, planFilter, sort); }, 350);
     return () => clearTimeout(t);
   }, [q]); // eslint-disable-line
 
@@ -74,7 +83,37 @@ export default function Users() {
   function selectPlanFilter(key) {
     setPlanFilter(key);
     setPage(1);
-    load(q, 1, key);
+    load(q, 1, key, sort);
+  }
+
+  function selectSort(key) {
+    setSort(key);
+    setPage(1);
+    load(q, 1, planFilter, key);
+  }
+
+  // Export the CURRENT filtered group as a CSV download
+  async function exportCsv() {
+    setExporting(true);
+    try {
+      const res = await api.get("/admin/portal/users/export.csv", {
+        params: { q, plan: planFilter, sort },
+        responseType: "blob",
+      });
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: "text/csv" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `petbillshield-users-${planFilter}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success("Export downloaded");
+    } catch {
+      toast.error("Export failed");
+    } finally {
+      setExporting(false);
+    }
   }
 
   const openDetail = async (uid) => {
@@ -143,6 +182,31 @@ export default function Users() {
               </button>
             );
           })}
+        </div>
+
+        {/* Sort + export */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="relative inline-flex items-center">
+            <ArrowDownUp size={12} className="absolute left-2.5 text-[#65635C] pointer-events-none" />
+            <select
+              value={sort}
+              onChange={(e) => selectSort(e.target.value)}
+              className="appearance-none rounded-lg border border-[#2A2924] bg-[#1E1D1A] text-[#FAF9F6] text-xs pl-7 pr-7 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#D26D53] cursor-pointer"
+            >
+              {SORT_OPTIONS.map((o) => (
+                <option key={o.key} value={o.key}>{o.label}</option>
+              ))}
+            </select>
+          </div>
+          <button
+            onClick={exportCsv}
+            disabled={exporting}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-[#2A2924] bg-[#1E1D1A] text-[#8A887F] hover:text-[#FAF9F6] hover:border-[#3A3833] text-xs font-semibold px-3 py-1.5 transition disabled:opacity-40"
+            title={`Export ${planFilter === "all" ? "all users" : planFilter + " subscribers"} as CSV`}
+          >
+            <Download size={12} />
+            {exporting ? "Exporting…" : "Export CSV"}
+          </button>
         </div>
 
         {loading
