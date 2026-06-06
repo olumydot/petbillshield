@@ -198,6 +198,7 @@ RESEND_TEMPLATE_SUBSCRIPTION_REACTIVATED = os.environ.get("RESEND_TEMPLATE_SUBSC
 RESEND_TEMPLATE_PLAN_CHANGED = os.environ.get("RESEND_TEMPLATE_PLAN_CHANGED", "").strip()
 RESEND_TEMPLATE_PASSWORD_RESET = os.environ.get("RESEND_TEMPLATE_PASSWORD_RESET", "").strip()
 RESEND_TEMPLATE_VERIFY_EMAIL_CHANGE = os.environ.get("RESEND_TEMPLATE_VERIFY_EMAIL_CHANGE", "").strip()
+RESEND_TEMPLATE_PACKET_SENT = os.environ.get("RESEND_TEMPLATE_PACKET_SENT", "").strip()
 ADMIN_EMAILS = [e.strip().lower() for e in (os.environ.get('ADMIN_EMAILS', '') or '').split(',') if e.strip()]
 CONTACT_INBOX_EMAIL = os.environ.get('CONTACT_INBOX_EMAIL', '')
 if RESEND_API_KEY:
@@ -215,6 +216,7 @@ RESEND_TEMPLATE_IDS = {
     "plan_changed": RESEND_TEMPLATE_PLAN_CHANGED,
     "password_reset": RESEND_TEMPLATE_PASSWORD_RESET,
     "verify_email_change": RESEND_TEMPLATE_VERIFY_EMAIL_CHANGE,
+    "packet_sent": RESEND_TEMPLATE_PACKET_SENT,
 }
 
 
@@ -226,12 +228,14 @@ async def send_resend_email(
     template_key: str | None = None,
     template_variables: dict | None = None,
     reply_to: str | list[str] | None = None,
+    attachments: list | None = None,
 ):
     """
     Send an email through Resend.
 
     If a template ID is configured for template_key, we send via
     `template: { id, variables }`. Otherwise we fall back to raw HTML.
+    Optional `attachments` (e.g. a PDF packet) are included on either path.
     """
     if not RESEND_API_KEY:
         logger.debug(f"RESEND not configured — would send '{subject}' to {to}")
@@ -245,6 +249,8 @@ async def send_resend_email(
     }
     if reply_to:
         base["reply_to"] = reply_to
+    if attachments:
+        base["attachments"] = attachments
 
     resend.api_key = RESEND_API_KEY
 

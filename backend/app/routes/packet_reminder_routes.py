@@ -82,24 +82,33 @@ async def email_packet(analysis_id: str, payload: EmailPacketRequest, user: User
     </table>
     """
 
-    params = {
-        "from": SENDER_EMAIL,
-        "to": [payload.to_email],
-        "reply_to": user.email,
-        "subject": f"PetBill Shield — estimate review for {pet_label}",
-        "html": html,
-        "attachments": [
-            {
-                "filename": f"petbill_shield_packet_{analysis_id}.pdf",
-                "content": pdf_b64,
-            }
-        ],
-    }
+    attachments = [
+        {
+            "filename": f"petbill_shield_packet_{analysis_id}.pdf",
+            "content": pdf_b64,
+        }
+    ]
 
     delivered = False
     delivery_error = None
     try:
-        resp = await asyncio.to_thread(resend.Emails.send, params)
+        resp = await send_resend_email(
+            to=[payload.to_email],
+            subject=f"PetBill Shield — estimate review for {pet_label}",
+            html=html,
+            template_key="packet_sent",
+            template_variables={
+                "to_email":     payload.to_email,
+                "vet_name":     vet_label,
+                "pet_name":     pet_label,
+                "sender_name":  sender_name,
+                "sender_email": user.email,
+                "note":         (payload.note or "").strip(),
+                "frontend_url": FRONTEND_URL,
+            },
+            reply_to=user.email,
+            attachments=attachments,
+        )
         delivered = True
         info = str(resp.get("id") if isinstance(resp, dict) else resp)[:160]
     except Exception as e:
