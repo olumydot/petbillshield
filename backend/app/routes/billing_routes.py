@@ -919,6 +919,28 @@ async def _grant_entitlement(
         {"$set": update}
     )
 
+    # ── Subscription welcome — sent exactly ONCE, on first paid activation ─────
+    # Centralised here so EVERY activation path reliably triggers it: embedded
+    # checkout (billing/status), Stripe webhook, billing/me self-heal,
+    # confirm-payment, and admin comp. Renewals and plan switches are skipped
+    # (the flag is already set) and have their own emails (renewal_success /
+    # plan_changed). The atomic flag-set guards against double-sends/races.
+    if not current_user.get("subscription_welcome_sent_at"):
+        marked = await db.users.update_one(
+            {"user_id": user_id, "subscription_welcome_sent_at": {"$exists": False}},
+            {"$set": {"subscription_welcome_sent_at": datetime.now(timezone.utc).isoformat()}},
+        )
+        if marked.modified_count:
+            welcome_email = current_user.get("email", "")
+            if welcome_email:
+                asyncio.create_task(email_welcome(
+                    email=welcome_email,
+                    name=current_user.get("name", ""),
+                    plan_label=plan.get("label", plan_id),
+                    plan_id=plan_id,
+                    expires_at=expires_at,
+                ))
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Billing email helpers
@@ -1806,13 +1828,7 @@ async def billing_status(session_id: str, user: User = Depends(get_current_user)
             tx["status"] = status or "complete"
             tx["entitled"] = True
             granted_now = True
-            refreshed_user = await db.users.find_one({"user_id": user.user_id}, {"_id": 0}) or {}
-            await _queue_welcome_email_once(
-                session_id=session_id,
-                user_id=user.user_id,
-                plan_id=tx["plan_id"],
-                user_doc=refreshed_user,
-            )
+            # Welcome email is sent centrally by _grant_entitlement (once per user).
 
     except Exception as e:
         logger.warning(f"Stripe session retrieve failed: {e}")
@@ -1898,12 +1914,7 @@ async def stripe_webhook(request: Request):
                     }
                 },
             )
-            await _queue_welcome_email_once(
-                session_id=session_id,
-                user_id=user_id,
-                plan_id=plan_id,
-                user_doc=user_doc,
-            )
+            # Welcome email is sent centrally by _grant_entitlement (once per user).
 
     elif event_type == "customer.subscription.deleted":
         subscription_id = obj.get("id")
