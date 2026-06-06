@@ -17,6 +17,33 @@ Set `EXPO_PUBLIC_API_URL` to the backend API root. Production defaults to:
 EXPO_PUBLIC_API_URL=https://api.petbillshield.com/api
 ```
 
+## Build an installable iPhone test app
+
+You need an Apple Developer account for a downloadable iPhone build because iOS
+requires signed apps on real devices.
+
+```bash
+cd mobile
+npm install
+npm run build:ios:preview
+```
+
+The first EAS build will ask you to:
+
+1. Sign in or create an Expo account.
+2. Connect or create the EAS project.
+3. Sign in with your Apple Developer account.
+4. Register your iPhone for internal distribution if prompted.
+
+When the build finishes, Expo gives you a download/install link. Open that link
+on your iPhone to install the app and test against the live backend.
+
+For Android testing:
+
+```bash
+npm run build:android:preview
+```
+
 ## Current first pass
 
 - Email/password sign in and sign up
