@@ -41,6 +41,14 @@ def _paginate(total: int, page: int, limit: int) -> dict:
     }
 
 
+# Stripe API version 2025-03-31 (pinned by stripe-python 15.x) removed the
+# top-level `coupon` param from PromotionCode.create and dropped the inline
+# `coupon` object from PromotionCode list/retrieve responses. We pin promo
+# operations to an older version where `coupon` is accepted and returned inline,
+# so create + validate stay consistent across admin and checkout.
+PROMO_STRIPE_VERSION = "2023-10-16"
+
+
 def _configure_stripe() -> None:
     stripe_sdk.api_key = STRIPE_API_KEY
     stripe_sdk.api_base = "https://api.stripe.com"
@@ -549,6 +557,7 @@ async def portal_list_promos(_: User = Depends(require_admin)):
             limit=50,
             active=True,
             expand=["data.coupon"],
+            stripe_version=PROMO_STRIPE_VERSION,
         )
         result = []
         for pc in codes.auto_paging_iter():
@@ -591,7 +600,7 @@ async def portal_create_promo(
         if payload.duration == "repeating" and payload.duration_months:
             coupon_params["duration_in_months"] = payload.duration_months
 
-        coupon = stripe_sdk.Coupon.create(**coupon_params)
+        coupon = stripe_sdk.Coupon.create(**coupon_params, stripe_version=PROMO_STRIPE_VERSION)
 
         promo_params: dict = {
             "coupon": coupon.id,
@@ -603,7 +612,7 @@ async def portal_create_promo(
             import time
             promo_params["expires_at"] = int(time.time()) + (payload.expires_days * 86400)
 
-        promo = stripe_sdk.PromotionCode.create(**promo_params)
+        promo = stripe_sdk.PromotionCode.create(**promo_params, stripe_version=PROMO_STRIPE_VERSION)
         return {"ok": True, "promo_id": promo.id, "code": promo.code}
     except stripe_sdk.error.StripeError as e:
         raise HTTPException(status_code=400, detail=str(e.user_message or e))
@@ -618,7 +627,7 @@ async def portal_deactivate_promo(
         raise HTTPException(status_code=500, detail="Stripe not configured.")
     try:
         _configure_stripe()
-        stripe_sdk.PromotionCode.modify(promo_id, active=False)
+        stripe_sdk.PromotionCode.modify(promo_id, active=False, stripe_version=PROMO_STRIPE_VERSION)
         return {"ok": True}
     except stripe_sdk.error.StripeError as e:
         raise HTTPException(status_code=400, detail=str(e.user_message or e))

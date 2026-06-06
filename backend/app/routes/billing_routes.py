@@ -92,6 +92,13 @@ async def _validate_published_promo(code: str, plan_id: str) -> dict:
     return promo
 
 
+# Stripe API 2025-03-31 dropped the inline `coupon` object from PromotionCode
+# responses; pin promo reads to an older version so `.coupon` (percent_off,
+# duration, …) stays available for term validation. Must match the version the
+# admin route uses to CREATE codes.
+_PROMO_STRIPE_VERSION = "2023-10-16"
+
+
 async def _stripe_promotion_code(code: str):
     normalized = (code or "").strip().upper()
     codes = await asyncio.to_thread(
@@ -99,6 +106,8 @@ async def _stripe_promotion_code(code: str):
         code=normalized,
         active=True,
         limit=1,
+        expand=["data.coupon"],
+        stripe_version=_PROMO_STRIPE_VERSION,
     )
     if not codes.data:
         raise HTTPException(status_code=400, detail="That promo code is invalid or has expired.")
