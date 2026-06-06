@@ -25,5 +25,10 @@ module.exports = {
       favicon: "./assets/favicon.png",
     },
     plugins: ["expo-secure-store"],
+    extra: {
+      eas: {
+        projectId: "c5770641-bb39-4f8e-915d-d1ac4e7af21f",
+      },
+    },
   },
 };
