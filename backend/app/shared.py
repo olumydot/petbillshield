@@ -238,25 +238,37 @@ async def send_resend_email(
         return None
 
     template_id = RESEND_TEMPLATE_IDS.get(template_key or "", "")
-    params = {
+    base = {
         "from": SENDER_EMAIL,
         "to": to,
         "subject": subject,
     }
     if reply_to:
-        params["reply_to"] = reply_to
-    if template_id:
-        params["template"] = {
-            "id": template_id,
-            "variables": template_variables or {},
-        }
-    elif html:
-        params["html"] = html
-    else:
-        raise ValueError("send_resend_email requires html when no template_id is configured")
+        base["reply_to"] = reply_to
 
     resend.api_key = RESEND_API_KEY
-    return await asyncio.to_thread(resend.Emails.send, params)
+
+    # Prefer a configured Resend template, but NEVER let a missing/broken template
+    # silently drop the email — fall back to the raw HTML the caller provided.
+    if template_id:
+        try:
+            params = {
+                **base,
+                "template": {"id": template_id, "variables": template_variables or {}},
+            }
+            return await asyncio.to_thread(resend.Emails.send, params)
+        except Exception as e:
+            logger.warning(
+                f"Resend template '{template_key}' ({template_id}) failed: {e} — "
+                f"falling back to inline HTML."
+            )
+            if not html:
+                raise
+
+    if not html:
+        raise ValueError("send_resend_email requires html when no template_id is configured")
+
+    return await asyncio.to_thread(resend.Emails.send, {**base, "html": html})
 
 
 def _is_admin_email(email: Optional[str]) -> bool:
