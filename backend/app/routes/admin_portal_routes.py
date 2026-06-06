@@ -26,9 +26,24 @@ from app.shared import (
     SENDER_EMAIL, RESEND_API_KEY,
     STRIPE_API_KEY,
     stripe_sdk, uuid,
+    PLANS,
 )
 
 router = APIRouter()
+
+# Approx Claude cost per AI call by usage_type (USD) — used for margin reporting.
+_AI_CALL_COST: dict = {
+    "estimate":          0.04,
+    "compare":           0.04,
+    "ask":               0.02,
+    "script":            0.02,
+    "claim":             0.04,
+    "timeline_summary":  0.02,
+    "pet_question":      0.02,
+    "suggest_reminders": 0.02,
+    "forecast":          0.02,
+}
+_DEFAULT_AI_CALL_COST = 0.03
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -341,6 +356,249 @@ async def portal_export_users_csv(
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  REVENUE — MRR, churn, conversion, AI cost vs revenue margin
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/admin/portal/revenue")
+async def portal_revenue(_: User = Depends(require_admin)):
+    now         = datetime.now(timezone.utc)
+    ago_30d     = (now - timedelta(days=30)).isoformat()
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+
+    # Active subscribers grouped by plan
+    plan_counts: dict = {}
+    async for row in db.users.aggregate([
+        {"$match": {"subscription_status": "active", "plan_id": {"$exists": True, "$ne": None}}},
+        {"$group": {"_id": "$plan_id", "count": {"$sum": 1}}},
+    ]):
+        plan_counts[row["_id"]] = row["count"]
+
+    # MRR by tier group
+    tiers = {"vault": 0.0, "family": 0.0, "rescue": 0.0}
+    tier_subs = {"vault": 0, "family": 0, "rescue": 0}
+    for pid, count in plan_counts.items():
+        mrr_each = _PLAN_MRR.get(pid, 0)
+        grp = "vault" if "vault" in pid else "family" if "family" in pid else "rescue" if "rescue" in pid else None
+        if grp:
+            tiers[grp] += mrr_each * count
+            tier_subs[grp] += count
+    mrr_total = round(sum(tiers.values()), 2)
+
+    active_subs = sum(plan_counts.values())
+    total_users = await db.users.count_documents({})
+    free_users  = total_users - active_subs
+
+    # New paid subs and churn (last 30d)
+    new_subs_30d = await db.users.count_documents({
+        "subscription_status": "active",
+        "upgraded_at": {"$gte": ago_30d},
+    })
+    churn_30d = await db.users.count_documents({
+        "subscription_status": {"$in": ["canceled", "cancelled"]},
+        "updated_at": {"$gte": ago_30d},
+    })
+
+    conversion = round((active_subs / total_users) * 100, 1) if total_users else 0.0
+    churn_rate = round((churn_30d / (active_subs + churn_30d)) * 100, 1) if (active_subs + churn_30d) else 0.0
+
+    # AI cost this month (from ai_usage) vs revenue → margin
+    ai_cost_month = 0.0
+    async for row in db.ai_usage.aggregate([
+        {"$match": {"created_at": {"$gte": month_start}}},
+        {"$group": {"_id": "$usage_type", "count": {"$sum": 1}}},
+    ]):
+        ai_cost_month += row["count"] * _AI_CALL_COST.get(row["_id"], _DEFAULT_AI_CALL_COST)
+    ai_cost_month = round(ai_cost_month, 2)
+
+    revenue_month = 0.0
+    async for row in db.payment_transactions.aggregate([
+        {"$match": {"payment_status": "paid", "created_at": {"$gte": month_start}}},
+        {"$group": {"_id": None, "total": {"$sum": "$amount"}}},
+    ]):
+        revenue_month = round(float(row.get("total") or 0), 2)
+        break
+
+    gross_margin_pct = round(((revenue_month - ai_cost_month) / revenue_month) * 100, 1) if revenue_month else None
+
+    return {
+        "mrr_usd":      mrr_total,
+        "arr_usd":      round(mrr_total * 12, 2),
+        "tiers":        {k: round(v, 2) for k, v in tiers.items()},
+        "tier_subs":    tier_subs,
+        "active_subs":  active_subs,
+        "free_users":   free_users,
+        "total_users":  total_users,
+        "new_subs_30d": new_subs_30d,
+        "churn_30d":    churn_30d,
+        "conversion_pct": conversion,
+        "churn_rate_pct": churn_rate,
+        "ai_cost_month_usd": ai_cost_month,
+        "revenue_month_usd": revenue_month,
+        "gross_margin_pct":  gross_margin_pct,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  BILLING OPS — failed/past-due, incomplete checkouts, manual comp
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/admin/portal/billing")
+async def portal_billing(_: User = Depends(require_admin)):
+    now     = datetime.now(timezone.utc)
+    ago_7d  = (now - timedelta(days=7)).isoformat()
+
+    def _u(d):
+        return {
+            "user_id": d.get("user_id"),
+            "name": d.get("name"),
+            "email": d.get("email"),
+            "plan_id": d.get("plan_id"),
+            "subscription_status": d.get("subscription_status"),
+            "entitlement_expires_at": d.get("entitlement_expires_at"),
+            "stripe_customer_id": d.get("stripe_customer_id"),
+        }
+
+    past_due = [
+        _u(d) for d in await db.users.find(
+            {"subscription_status": {"$in": ["past_due", "unpaid"]}},
+            {"_id": 0},
+        ).sort("updated_at", -1).to_list(50)
+    ]
+    incomplete = [
+        _u(d) for d in await db.users.find(
+            {"subscription_status": "incomplete"},
+            {"_id": 0},
+        ).sort("updated_at", -1).to_list(50)
+    ]
+
+    # Recent checkout sessions that started but never entitled (lost-sale recovery)
+    abandoned = await db.payment_transactions.find(
+        {"entitled": {"$ne": True}, "created_at": {"$gte": ago_7d},
+         "session_id": {"$exists": True, "$ne": None}},
+        {"_id": 0, "session_id": 1, "user_email": 1, "plan_id": 1,
+         "payment_status": 1, "created_at": 1},
+    ).sort("created_at", -1).to_list(50)
+
+    return {
+        "past_due":   past_due,
+        "incomplete": incomplete,
+        "abandoned_checkouts": abandoned,
+        "counts": {
+            "past_due":   len(past_due),
+            "incomplete": len(incomplete),
+            "abandoned":  len(abandoned),
+        },
+    }
+
+
+class CompRequest(BaseModel):
+    plan_id: str
+    days: int = 30
+    reason: str = ""
+
+
+@router.post("/admin/portal/users/{user_id}/comp")
+async def portal_comp_user(
+    user_id: str,
+    payload: CompRequest,
+    admin: User = Depends(require_admin),
+):
+    """Manually grant (comp) a plan to a user — e.g. rescue a paid user whose
+    activation failed, or give a complimentary subscription."""
+    if payload.plan_id not in PLANS:
+        raise HTTPException(status_code=400, detail="Unknown plan_id")
+    user = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Reuse the canonical entitlement granter (lazy import avoids any cycle)
+    from app.routes.billing_routes import _grant_entitlement
+    expires_at = (datetime.now(timezone.utc) + timedelta(days=max(1, payload.days))).isoformat()
+    await _grant_entitlement(
+        user_id=user_id,
+        plan_id=payload.plan_id,
+        stripe_customer_id=user.get("stripe_customer_id"),
+        stripe_subscription_id=user.get("stripe_subscription_id"),
+        expires_at_override=expires_at,
+    )
+    await db.users.update_one(
+        {"user_id": user_id},
+        {"$set": {"subscription_status": "active", "comped": True}},
+    )
+
+    # Audit trail
+    await db.admin_audit.insert_one({
+        "audit_id": f"aud_{uuid.uuid4().hex[:10]}",
+        "action": "comp_subscription",
+        "admin_email": admin.email,
+        "target_user_id": user_id,
+        "target_email": user.get("email"),
+        "details": {"plan_id": payload.plan_id, "days": payload.days, "reason": payload.reason},
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+
+    return {"ok": True, "plan_id": payload.plan_id, "expires_at": expires_at}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  AI USAGE — top users, per-feature breakdown, cost
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/admin/portal/ai-usage")
+async def portal_ai_usage(_: User = Depends(require_admin)):
+    now         = datetime.now(timezone.utc)
+    ago_30d     = (now - timedelta(days=30)).isoformat()
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+
+    # Per-feature breakdown (this month) + cost
+    per_feature = []
+    total_calls = 0
+    total_cost  = 0.0
+    async for row in db.ai_usage.aggregate([
+        {"$match": {"created_at": {"$gte": month_start}}},
+        {"$group": {"_id": "$usage_type", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}},
+    ]):
+        cost = row["count"] * _AI_CALL_COST.get(row["_id"], _DEFAULT_AI_CALL_COST)
+        total_calls += row["count"]
+        total_cost  += cost
+        per_feature.append({
+            "feature": row["_id"],
+            "count": row["count"],
+            "cost_usd": round(cost, 2),
+        })
+
+    # Top users by AI calls (last 30d)
+    top_raw = []
+    async for row in db.ai_usage.aggregate([
+        {"$match": {"created_at": {"$gte": ago_30d}}},
+        {"$group": {"_id": "$user_id", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}},
+        {"$limit": 15},
+    ]):
+        top_raw.append(row)
+
+    top_users = []
+    for row in top_raw:
+        u = await db.users.find_one({"user_id": row["_id"]}, {"_id": 0, "email": 1, "name": 1, "plan_id": 1, "subscription_status": 1}) or {}
+        top_users.append({
+            "user_id": row["_id"],
+            "email": u.get("email", "(unknown)"),
+            "name": u.get("name", ""),
+            "plan_id": u.get("plan_id") or "free",
+            "active": u.get("subscription_status") == "active",
+            "calls_30d": row["count"],
+        })
+
+    return {
+        "month_total_calls": total_calls,
+        "month_total_cost_usd": round(total_cost, 2),
+        "per_feature": per_feature,
+        "top_users": top_users,
+    }
 
 
 @router.get("/admin/portal/users/{user_id}")
