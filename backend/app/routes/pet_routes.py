@@ -386,3 +386,100 @@ async def import_records_csv(
         "errors": errors[:50],
         "categories": RECORD_CATEGORIES,
     }
+
+
+# -------------------- Year in Review --------------------
+@router.get("/pets/{pet_id}/year-in-review")
+async def pet_year_in_review(
+    pet_id: str,
+    year: Optional[int] = None,
+    user: User = Depends(get_current_user),
+):
+    """A warm annual recap for one pet: spend, visits, care milestones, savings."""
+    pet = await db.pets.find_one({"pet_id": pet_id, "user_id": user.user_id}, {"_id": 0})
+    if not pet:
+        raise HTTPException(status_code=404, detail="Pet not found")
+
+    yr = year or datetime.now(timezone.utc).year
+
+    def _eff_date(rec):
+        raw = (rec.get("date") or "").strip()
+        if not raw:
+            raw = rec.get("created_at") or ""
+            if not isinstance(raw, str):
+                try:
+                    raw = raw.isoformat()
+                except Exception:
+                    raw = ""
+        return raw
+
+    records = await db.pet_records.find(
+        {"pet_id": pet_id, "user_id": user.user_id}, {"_id": 0},
+    ).to_list(10000)
+
+    total_spent = 0.0
+    by_category: dict = {}
+    by_month = [0.0] * 12
+    visits = vaccines = meds = labs = 0
+    biggest = None
+
+    for rec in records:
+        eff = _eff_date(rec)
+        try:
+            dt = datetime.fromisoformat(eff.replace("Z", "+00:00"))
+        except Exception:
+            continue
+        if dt.year != yr:
+            continue
+
+        rtype = rec.get("record_type") or "note"
+        if rtype == "visit":   visits += 1
+        if rtype == "vaccine": vaccines += 1
+        if rtype == "medication": meds += 1
+        if rtype == "lab":     labs += 1
+
+        amt = rec.get("amount_usd")
+        if amt:
+            try:
+                amt = float(amt)
+            except (TypeError, ValueError):
+                amt = 0.0
+            if amt > 0:
+                total_spent += amt
+                cat = (rec.get("category") or "other").strip() or "other"
+                by_category[cat] = by_category.get(cat, 0.0) + amt
+                by_month[dt.month - 1] += amt
+                if not biggest or amt > biggest["amount_usd"]:
+                    biggest = {"title": rec.get("title") or "Vet bill", "amount_usd": round(amt, 2), "date": eff[:10]}
+
+    # Savings logged via bill outcomes this year
+    estimates = await db.estimates.find(
+        {"user_id": user.user_id, "pet_id": pet_id}, {"_id": 0, "outcome": 1, "created_at": 1},
+    ).to_list(2000)
+    saved = 0.0
+    analyses = 0
+    for e in estimates:
+        analyses += 1
+        out = e.get("outcome") or {}
+        if out.get("saved_usd"):
+            saved += float(out["saved_usd"])
+
+    top_categories = sorted(by_category.items(), key=lambda x: -x[1])[:5]
+
+    return {
+        "year": yr,
+        "pet_name": pet.get("name") or "your pet",
+        "species": pet.get("species") or "",
+        "total_spent_usd": round(total_spent, 2),
+        "records_count": sum(1 for r in records if _eff_date(r)[:4] == str(yr)),
+        "visits": visits,
+        "vaccines": vaccines,
+        "medications": meds,
+        "labs": labs,
+        "analyses": analyses,
+        "saved_usd": round(saved, 2),
+        "biggest_bill": biggest,
+        "by_month": [round(m, 2) for m in by_month],
+        "top_categories": [{"category": k, "total_usd": round(v, 2)} for k, v in top_categories],
+        "has_data": total_spent > 0 or visits or vaccines or analyses,
+    }

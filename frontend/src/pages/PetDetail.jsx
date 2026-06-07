@@ -251,6 +251,7 @@ export default function PetDetail() {
       <section className="grid xl:grid-cols-12 gap-6">
         <div className="xl:col-span-8 space-y-6">
           <AIInsightCard pet={pet} aiInsights={aiInsights} loading={loadingSecondary} />
+          <YearInReviewCard petId={id} petName={pet?.name} />
           <HealthJourney spending={spending} loading={loadingSecondary} />
           <RecordsTimeline
             records={records}
@@ -282,6 +283,123 @@ export default function PetDetail() {
           onSaved={() => { setShowAddRecord(false); load(); }}
         />
       )}
+    </div>
+  );
+}
+
+// ── Year in Review ──────────────────────────────────────────────────────────────
+function YearInReviewCard({ petId, petName }) {
+  const nowYear = new Date().getFullYear();
+  const [year, setYear]   = useState(nowYear);
+  const [data, setData]   = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [open, setOpen]   = useState(false);
+
+  const usd = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  const MONTHS = ["J","F","M","A","M","J","J","A","S","O","N","D"];
+
+  const load = useCallback(async (yr) => {
+    setLoading(true);
+    try {
+      const { data } = await api.get(`/pets/${petId}/year-in-review`, { params: { year: yr } });
+      setData(data);
+    } catch (_) {
+      setData(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [petId]);
+
+  useEffect(() => { if (open) load(year); }, [open, year, load]);
+
+  const maxMonth = data ? Math.max(1, ...(data.by_month || [0])) : 1;
+
+  return (
+    <section className="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-[#2D2C28] to-[#1F2620] text-[#FAF9F6]">
+      <div className="absolute right-0 top-0 h-40 w-40 rounded-full bg-[#E6AE2E]/20 blur-3xl" />
+      <div className="relative z-10 p-5 sm:p-6">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Sparkles size={16} className="text-[#E6AE2E]" />
+            <h3 className="font-serif-display text-2xl">{petName || "Your pet"}'s Year in Review</h3>
+          </div>
+          <div className="flex items-center gap-2">
+            <select value={year} onChange={(e) => setYear(Number(e.target.value))}
+              className="rounded-lg bg-white/10 border border-white/15 px-2.5 py-1.5 text-xs text-white focus:outline-none">
+              {[nowYear, nowYear - 1, nowYear - 2].map((y) => <option key={y} value={y} className="text-[#2D2C28]">{y}</option>)}
+            </select>
+            <button onClick={() => setOpen((o) => !o)}
+              className="rounded-lg bg-[#E6AE2E] text-[#2D2C28] px-3 py-1.5 text-xs font-bold">
+              {open ? "Hide" : "View"}
+            </button>
+          </div>
+        </div>
+
+        {!open ? (
+          <p className="text-sm text-white/60 mt-2">A warm recap of {petName || "your pet"}'s care, spend, and milestones this year.</p>
+        ) : loading ? (
+          <div className="py-8 flex justify-center"><Loader2 size={20} className="animate-spin text-white/70" /></div>
+        ) : !data || !data.has_data ? (
+          <p className="text-sm text-white/60 mt-4 py-4">No records yet for {year}. As you log visits, bills, and vaccines, this recap fills in.</p>
+        ) : (
+          <div className="mt-5 space-y-5">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <YirStat value={usd(data.total_spent_usd)} label="Total care spend" />
+              <YirStat value={data.visits} label="Vet visits" />
+              <YirStat value={data.vaccines} label="Vaccines" />
+              <YirStat value={data.analyses} label="Bills analyzed" />
+            </div>
+
+            {data.saved_usd > 0 && (
+              <div className="rounded-2xl bg-[#6FA56B]/15 border border-[#6FA56B]/30 px-4 py-3">
+                <span className="text-sm">🎉 You saved <strong className="text-[#A6D49F]">{usd(data.saved_usd)}</strong> on {petName || "your pet"}'s care this year.</span>
+              </div>
+            )}
+
+            {/* Monthly spend sparkline */}
+            <div>
+              <div className="text-[11px] uppercase tracking-wider text-white/50 mb-2">Monthly spend</div>
+              <div className="flex items-end gap-1.5 h-20">
+                {(data.by_month || []).map((m, i) => (
+                  <div key={i} className="flex-1 flex flex-col items-center justify-end gap-1">
+                    <div className="w-full rounded-t bg-[#E6AE2E]/70" style={{ height: `${Math.max(3, (m / maxMonth) * 100)}%` }} title={usd(m)} />
+                    <span className="text-[9px] text-white/40">{MONTHS[i]}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {data.biggest_bill && (
+              <div className="text-sm text-white/70">
+                Biggest bill: <strong className="text-white">{data.biggest_bill.title}</strong> — {usd(data.biggest_bill.amount_usd)}
+                {data.biggest_bill.date ? <span className="text-white/40"> ({data.biggest_bill.date})</span> : null}
+              </div>
+            )}
+
+            {data.top_categories?.length > 0 && (
+              <div>
+                <div className="text-[11px] uppercase tracking-wider text-white/50 mb-2">Where it went</div>
+                <div className="flex flex-wrap gap-2">
+                  {data.top_categories.map((c) => (
+                    <span key={c.category} className="rounded-full bg-white/10 border border-white/10 px-3 py-1 text-xs capitalize">
+                      {c.category} · {usd(c.total_usd)}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function YirStat({ value, label }) {
+  return (
+    <div className="rounded-2xl bg-white/8 border border-white/10 p-3">
+      <div className="font-serif-display text-2xl">{value}</div>
+      <div className="text-[11px] text-white/50">{label}</div>
     </div>
   );
 }
