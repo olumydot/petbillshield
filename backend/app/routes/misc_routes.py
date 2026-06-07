@@ -515,6 +515,121 @@ Generate a public-facing adoption or foster bio. Return JSON only.
     return {"ok": True, "bio": {k: v for k, v in doc.items() if k != "_id"}}
 
 
+# -------------------- Rescue / Foster expense report (donor & tax) --------------------
+def _record_effective_date(rec: dict) -> str:
+    """Best-effort ISO date for a record: explicit date, else created_at."""
+    raw = (rec.get("date") or "").strip()
+    if not raw:
+        raw = rec.get("created_at") or ""
+        if not isinstance(raw, str):
+            try:
+                raw = raw.isoformat()
+            except Exception:
+                raw = ""
+    return raw
+
+
+def _build_expense_report(records: list, pet_names: dict, year: int | None):
+    """Aggregate priced records into a donor/tax-ready expense report."""
+    line_items = []
+    by_pet: dict = {}
+    by_category: dict = {}
+    total = 0.0
+
+    for rec in records:
+        amt = rec.get("amount_usd")
+        if not amt:
+            continue
+        try:
+            amt = float(amt)
+        except (TypeError, ValueError):
+            continue
+        if amt <= 0:
+            continue
+
+        eff = _record_effective_date(rec)
+        rec_year = None
+        if eff:
+            try:
+                rec_year = datetime.fromisoformat(eff.replace("Z", "+00:00")).year
+            except Exception:
+                rec_year = None
+        if year and rec_year != year:
+            continue
+
+        pet_info = pet_names.get(rec.get("pet_id"), {})
+        pet_name = pet_info.get("pet_name", "Unassigned")
+        category = (rec.get("category") or "other").strip() or "other"
+
+        total += amt
+        by_pet[pet_name] = by_pet.get(pet_name, 0.0) + amt
+        by_category[category] = by_category.get(category, 0.0) + amt
+        line_items.append({
+            "date":     (eff or "")[:10],
+            "pet_name": pet_name,
+            "species":  pet_info.get("pet_species", ""),
+            "type":     rec.get("record_type") or "note",
+            "category": category,
+            "title":    rec.get("title") or "",
+            "amount_usd": round(amt, 2),
+        })
+
+    line_items.sort(key=lambda r: r["date"], reverse=True)
+
+    return {
+        "year":        year,
+        "total_usd":   round(total, 2),
+        "count":       len(line_items),
+        "by_pet":      [{"pet_name": k, "total_usd": round(v, 2)} for k, v in sorted(by_pet.items(), key=lambda x: -x[1])],
+        "by_category": [{"category": k, "total_usd": round(v, 2)} for k, v in sorted(by_category.items(), key=lambda x: -x[1])],
+        "line_items":  line_items,
+    }
+
+
+@router.get("/rescue/expense-report")
+async def rescue_expense_report(year: int | None = None, user: User = Depends(get_current_user)):
+    """Donor- and tax-ready expense summary for the rescue/foster org."""
+    doc = await require_rescue_plan(user)
+    pet_names = await _pet_name_map(user)
+    records = await db.pet_records.find(
+        {"user_id": user.user_id, "amount_usd": {"$gt": 0}},
+        {"_id": 0},
+    ).to_list(10000)
+
+    report = _build_expense_report(records, pet_names, year)
+    report["org_name"] = doc.get("org_name") or doc.get("name") or ""
+    report["generated_at"] = datetime.now(timezone.utc).isoformat()
+    return report
+
+
+@router.get("/rescue/expense-report.csv")
+async def rescue_expense_report_csv(year: int | None = None, user: User = Depends(get_current_user)):
+    await require_rescue_plan(user)
+    pet_names = await _pet_name_map(user)
+    records = await db.pet_records.find(
+        {"user_id": user.user_id, "amount_usd": {"$gt": 0}},
+        {"_id": 0},
+    ).to_list(10000)
+
+    report = _build_expense_report(records, pet_names, year)
+
+    buf = io.StringIO()
+    writer = csv_module.writer(buf)
+    writer.writerow(["Date", "Animal", "Species", "Type", "Category", "Description", "Amount (USD)"])
+    for r in report["line_items"]:
+        writer.writerow([r["date"], r["pet_name"], r["species"], r["type"], r["category"], r["title"], f'{r["amount_usd"]:.2f}'])
+    writer.writerow([])
+    writer.writerow(["", "", "", "", "", "TOTAL", f'{report["total_usd"]:.2f}'])
+
+    label = str(year) if year else "all-time"
+    filename = f"petbill-expense-report-{label}.csv"
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 # -------------------- Shareable Analysis Links --------------------
 class AnalysisShare(BaseModel):
     model_config = ConfigDict(extra="ignore")

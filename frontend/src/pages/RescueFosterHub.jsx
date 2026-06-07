@@ -424,17 +424,20 @@ export default function RescueFosterHub() {
       )}
 
       {activeTab === "expense" && (
-        <ReportTab
-          title="Expense Report"
-          description="Detailed per-animal expense summary for donors, boards, or reimbursement tracking."
-          generatedReport={generatedReport}
-          generatedTitle={generatedTitle}
-          fallback={buildExpenseReport(selectedRecords, selectedPets, timelines)}
-          loading={generatingReport}
-          onGenerate={() => generateReport("expense")}
-          onDownload={downloadPdf}
-          onCopy={copyReport}
-        />
+        <div className="space-y-5">
+          <ExpenseExport />
+          <ReportTab
+            title="Narrative Expense Report"
+            description="AI-written per-animal expense summary for donors, boards, or reimbursement tracking."
+            generatedReport={generatedReport}
+            generatedTitle={generatedTitle}
+            fallback={buildExpenseReport(selectedRecords, selectedPets, timelines)}
+            loading={generatingReport}
+            onGenerate={() => generateReport("expense")}
+            onDownload={downloadPdf}
+            onCopy={copyReport}
+          />
+        </div>
       )}
 
       {activeTab === "adoption" && (
@@ -473,6 +476,128 @@ export default function RescueFosterHub() {
         />
       )}
     </div>
+  );
+}
+
+// Accountant-grade expense export: year filter, breakdowns, CSV download.
+function ExpenseExport() {
+  const nowYear = new Date().getFullYear();
+  const YEARS = ["all", nowYear, nowYear - 1, nowYear - 2];
+  const [year, setYear]       = useState(nowYear);
+  const [report, setReport]   = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+
+  const usd = (n) => `$${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  const load = useCallback(async (yr) => {
+    setLoading(true);
+    try {
+      const params = yr === "all" ? {} : { year: yr };
+      const { data } = await api.get("/rescue/expense-report", { params });
+      setReport(data);
+    } catch (_) {
+      setReport(null);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(year); }, [year, load]);
+
+  const downloadCsv = async () => {
+    setDownloading(true);
+    try {
+      const params = year === "all" ? {} : { year };
+      const { data } = await api.get("/rescue/expense-report.csv", { params, responseType: "blob" });
+      const url = window.URL.createObjectURL(new Blob([data], { type: "text/csv" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `petbill-expense-report-${year === "all" ? "all-time" : year}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (_) {
+      toast.error("Couldn't download the report.");
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  return (
+    <section className="cream-card rounded-[28px] p-5 sm:p-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <FileText size={16} className="text-[#556045]" />
+            <h3 className="font-serif-display text-2xl text-[#2D2C28]">Tax &amp; donor expense report</h3>
+          </div>
+          <p className="text-sm text-[#65635C] mt-1">
+            Itemized, accountant-ready totals across every animal — perfect for grant reports, board packets, and tax filings.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <select value={year} onChange={(e) => setYear(e.target.value === "all" ? "all" : Number(e.target.value))}
+            className="rounded-xl border border-[#E5E2D9] bg-[#FAF9F6] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#556045]/40">
+            {YEARS.map((y) => <option key={y} value={y}>{y === "all" ? "All time" : y}</option>)}
+          </select>
+          <button onClick={downloadCsv} disabled={downloading || !report?.count}
+            className="rounded-xl bg-[#556045] hover:bg-[#465038] text-white px-4 py-2 text-sm font-semibold inline-flex items-center gap-2 disabled:opacity-50">
+            {downloading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+            CSV
+          </button>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="py-8 flex justify-center"><Loader2 size={22} className="animate-spin text-[#556045]" /></div>
+      ) : !report || report.count === 0 ? (
+        <p className="text-sm text-[#8A887F] py-4">No priced records found for this period. Add invoice amounts to your animals' records and they'll roll up here.</p>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
+            <div className="rounded-2xl border border-[#E5E2D9] bg-white/50 p-3">
+              <div className="font-serif-display text-2xl text-[#2D2C28]">{usd(report.total_usd)}</div>
+              <div className="text-[11px] text-[#8A887F] uppercase tracking-wider">Total spend</div>
+            </div>
+            <div className="rounded-2xl border border-[#E5E2D9] bg-white/50 p-3">
+              <div className="font-serif-display text-2xl text-[#2D2C28]">{report.count}</div>
+              <div className="text-[11px] text-[#8A887F] uppercase tracking-wider">Line items</div>
+            </div>
+            <div className="rounded-2xl border border-[#E5E2D9] bg-white/50 p-3">
+              <div className="font-serif-display text-2xl text-[#2D2C28]">{report.by_pet.length}</div>
+              <div className="text-[11px] text-[#8A887F] uppercase tracking-wider">Animals</div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <div className="text-[11px] uppercase tracking-wider font-semibold text-[#8A887F] mb-2">By animal</div>
+              <div className="space-y-1">
+                {report.by_pet.slice(0, 8).map((r) => (
+                  <div key={r.pet_name} className="flex justify-between text-sm border-b border-[#EFECE3] py-1">
+                    <span className="text-[#2D2C28]">{r.pet_name}</span>
+                    <span className="font-mono text-[#556045]">{usd(r.total_usd)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div className="text-[11px] uppercase tracking-wider font-semibold text-[#8A887F] mb-2">By category</div>
+              <div className="space-y-1">
+                {report.by_category.slice(0, 8).map((r) => (
+                  <div key={r.category} className="flex justify-between text-sm border-b border-[#EFECE3] py-1">
+                    <span className="text-[#2D2C28] capitalize">{r.category}</span>
+                    <span className="font-mono text-[#556045]">{usd(r.total_usd)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </section>
   );
 }
 
