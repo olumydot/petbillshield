@@ -28,6 +28,7 @@ from app.routes.weekly_report_routes import (
     prepare_weekly_account_report_batch,
     send_due_weekly_account_reports,
 )
+from app.routes.webhook_routes import router as webhook_router
 
 
 
@@ -128,6 +129,7 @@ app.include_router(user_router, prefix="/api")
 app.include_router(content_router, prefix="/api")
 app.include_router(admin_portal_router, prefix="/api")
 app.include_router(weekly_report_router, prefix="/api")
+app.include_router(webhook_router, prefix="/api")
 
 
 @app.get("/api/")

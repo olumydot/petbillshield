@@ -761,6 +761,120 @@ async def _save_procedure_costs(
             logger.warning(f"procedure_costs insert failed: {exc}")
 
 
+async def run_estimate_for_user(
+    user: User,
+    contents: bytes,
+    filename: str = "",
+    content_type: str = "",
+    pet_id: Optional[str] = None,
+    language: str = "en",
+) -> EstimateAnalysis:
+    """
+    Reusable bill-analysis core (no HTTP form dependencies). Used by the
+    /estimates/analyze endpoint's siblings such as the inbound-email webhook.
+    Validates the file, runs the AI analysis (with cache), stores it, records
+    usage, and returns the EstimateAnalysis.
+    """
+    validate_upload_size(contents)
+    content_hash = hashlib.sha256(contents).hexdigest()
+    fn = (filename or "").lower()
+    ctype = (content_type or "").lower()
+
+    if "pdf" in ctype or fn.endswith(".pdf"):
+        declared_mime = "application/pdf"
+    elif ctype in ("image/jpeg", "image/png", "image/webp"):
+        declared_mime = ctype
+    elif fn.endswith((".jpg", ".jpeg")):
+        declared_mime = "image/jpeg"
+    elif fn.endswith(".png"):
+        declared_mime = "image/png"
+    elif fn.endswith(".webp"):
+        declared_mime = "image/webp"
+    else:
+        raise ValueError("Unsupported file type")
+
+    if not check_magic_bytes(contents, declared_mime):
+        raise ValueError("File content does not match declared type")
+
+    source_type = "text"
+    text_content = ""
+    image_b64: Optional[str] = None
+    image_media_type = "image/jpeg"
+
+    if declared_mime == "application/pdf":
+        source_type = "pdf"
+        text_content = extract_pdf_text(contents)
+        if not text_content:
+            raise ValueError("Could not extract text from PDF")
+    else:
+        source_type = "image"
+        image_b64 = base64.b64encode(contents).decode("utf-8")
+        image_media_type = declared_mime
+
+    pet_name = pet_species = ""
+    if pet_id:
+        pet_doc = await db.pets.find_one({"pet_id": pet_id, "user_id": user.user_id}, {"_id": 0})
+        if pet_doc:
+            pet_name = pet_doc.get("name", "")
+            pet_species = pet_doc.get("species", "")
+
+    # Cache check
+    result: dict = {}
+    cache_hit = False
+    cache_cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    cached = await db.estimate_cache.find_one({"content_hash": content_hash, "created_at": {"$gte": cache_cutoff}})
+    if cached:
+        result = cached["result"]
+        cache_hit = True
+    if not cache_hit:
+        result = await analyze_estimate_with_claude(
+            text_content, image_b64, pet_name or "", pet_species or "",
+            image_media_type=image_media_type, language=language or "en",
+        )
+        try:
+            await db.estimate_cache.insert_one({
+                "content_hash": content_hash, "result": result,
+                "created_at": datetime.now(timezone.utc).isoformat(), "hit_count": 0,
+            })
+        except Exception:
+            pass
+
+    saved_file = await save_uploaded_file(
+        contents=contents, original_filename=filename or "",
+        content_type=content_type or "", folder=ESTIMATE_UPLOAD_DIR,
+        user_id=user.user_id, purpose="estimate",
+    )
+
+    analysis = EstimateAnalysis(
+        user_id=user.user_id,
+        pet_id=pet_id or None,
+        pet_name=pet_name or "",
+        pet_species=pet_species or "",
+        source_type=source_type,  # type: ignore
+        original_filename=filename or "",
+        raw_text_excerpt=(text_content or "")[:800],
+        summary=result.get("summary", ""),
+        estimated_total_usd=result.get("estimated_total_usd"),
+        line_items=result.get("line_items", []) or [],
+        red_flags=result.get("red_flags", []) or [],
+        urgent_now=result.get("urgent_now", []) or [],
+        can_wait=result.get("can_wait", []) or [],
+        questions_to_ask_vet=result.get("questions_to_ask_vet", []) or [],
+        cost_saving_options=result.get("cost_saving_options", []) or [],
+        second_opinion_checklist=result.get("second_opinion_checklist", []) or [],
+        disclaimer=SAFETY_DISCLAIMER,
+    )
+    doc = analysis.model_dump()
+    doc["created_at"] = doc["created_at"].isoformat()
+    await db.estimates.insert_one(doc)
+    if saved_file:
+        await db.uploaded_files.update_one(
+            {"file_id": saved_file["file_id"]}, {"$set": {"linked_id": analysis.analysis_id}}
+        )
+    await record_ai_usage(user, "estimate", analysis.analysis_id)
+    return analysis
+
+
 # -------------------- Estimate Endpoints --------------------
 @router.post("/estimates/analyze", response_model=EstimateAnalysis)
 async def analyze_estimate(
