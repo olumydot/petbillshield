@@ -38,7 +38,7 @@ function Toggle({ checked, onChange, disabled = false }) {
       onClick={() => !disabled && onChange(!checked)}
       disabled={disabled}
       className={`relative w-11 h-6 rounded-full transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#556045] ${
-        checked ? "bg-[#556045]" : "bg-[#D9D6CD]"
+        checked ? "bg-[#6FA56B]" : "bg-[#9A968C]"
       } ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
     >
       <span
