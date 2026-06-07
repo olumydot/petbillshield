@@ -96,3 +96,61 @@ async def stats_reimbursements(
     }
 
 
+# -------------------- Savings tracker --------------------
+@router.get("/stats/savings")
+async def stats_savings(user: User = Depends(get_current_user)):
+    """
+    The headline "value for money" metric. Combines:
+      • bills_reviewed / total_reviewed_usd — everything PetBill Shield has read
+      • items_flagged — questions surfaced for the user to raise with their vet
+      • confirmed_savings_usd — what the user has actually saved, from outcomes
+        they logged on individual bills (estimated_total − amount_paid)
+      • reimbursements_usd — total insurance reimbursement estimated from claims
+    """
+    estimates = await db.estimates.find(
+        {"user_id": user.user_id},
+        {"_id": 0, "estimated_total_usd": 1, "red_flags": 1, "outcome": 1},
+    ).to_list(5000)
+
+    bills_reviewed   = len(estimates)
+    total_reviewed   = 0.0
+    items_flagged    = 0
+    confirmed_saving = 0.0
+    outcomes_logged  = 0
+
+    for e in estimates:
+        if e.get("estimated_total_usd"):
+            total_reviewed += float(e["estimated_total_usd"])
+        items_flagged += len(e.get("red_flags") or [])
+        outcome = e.get("outcome") or {}
+        if outcome:
+            outcomes_logged += 1
+            if outcome.get("saved_usd"):
+                confirmed_saving += float(outcome["saved_usd"])
+
+    # Insurance reimbursements logged via claims (actual where present, else estimated)
+    claims = await db.claims.find(
+        {"user_id": user.user_id},
+        {"_id": 0, "actual_reimbursement_usd": 1, "estimated_reimbursement_usd": 1},
+    ).to_list(2000)
+    reimbursements = 0.0
+    for c in claims:
+        amt = c.get("actual_reimbursement_usd")
+        if amt is None:
+            amt = c.get("estimated_reimbursement_usd")
+        if amt:
+            reimbursements += float(amt)
+
+    total_value = round(confirmed_saving + reimbursements, 2)
+
+    return {
+        "bills_reviewed":        bills_reviewed,
+        "total_reviewed_usd":    round(total_reviewed, 2),
+        "items_flagged":         items_flagged,
+        "confirmed_savings_usd": round(confirmed_saving, 2),
+        "outcomes_logged":       outcomes_logged,
+        "reimbursements_usd":    round(reimbursements, 2),
+        "total_value_usd":       total_value,
+    }
+
+

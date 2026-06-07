@@ -26,6 +26,7 @@ import {
   SendHorizontal,
   ThumbsUp,
   ThumbsDown,
+  PiggyBank,
 } from "lucide-react";
 
 import { toast } from "sonner";
@@ -75,6 +76,31 @@ export default function AnalysisDetail() {
   const [feedback,        setFeedback]        = useState(() => localStorage.getItem(FEEDBACK_KEY) || "");
   const [feedbackLoading, setFeedbackLoading] = useState(false);
 
+  // Outcome tracker — what the user actually paid (powers the savings metric)
+  const [paidInput,     setPaidInput]     = useState("");
+  const [outcomeNote,   setOutcomeNote]   = useState("");
+  const [outcomeSaving, setOutcomeSaving] = useState(false);
+  const [outcome,       setOutcome]       = useState(null);
+
+  async function submitOutcome() {
+    const paid = parseFloat(paidInput);
+    if (!Number.isFinite(paid) || paid < 0) { toast.error("Enter the amount you paid."); return; }
+    setOutcomeSaving(true);
+    try {
+      const { data } = await api.post(`/estimates/${id}/outcome`, { paid_usd: paid, note: outcomeNote });
+      setOutcome(data.outcome);
+      toast.success(
+        data.outcome?.saved_usd > 0
+          ? `Nice — $${Number(data.outcome.saved_usd).toFixed(0)} saved and added to your dashboard.`
+          : "Outcome saved."
+      );
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Couldn't save outcome.");
+    } finally {
+      setOutcomeSaving(false);
+    }
+  }
+
   // Market-rate transparency comparisons
   const [marketRates, setMarketRates] = useState({}); // label → stats
 
@@ -85,6 +111,7 @@ export default function AnalysisDetail() {
       .get(`/estimates/${id}`)
       .then(({ data }) => {
         setA(data);
+        if (data?.outcome) setOutcome(data.outcome);
         setRecordSaved(
           data?.saved_to_pet_vault === true || Boolean(data?.saved_pet_id)
         );
@@ -949,6 +976,68 @@ ${(a.cost_saving_options || []).map((x) => `- ${x}`).join("\n")}
               </button>
             </div>
           </div>
+        )}
+      </section>
+
+      {/* ── Outcome tracker: what you actually paid ────────────────────────── */}
+      <section className="cream-card p-5 rounded-[24px]">
+        <div className="flex items-center gap-2 mb-1">
+          <PiggyBank size={15} className="text-[#556045]" />
+          <div className="eyebrow text-[#556045]">Track your savings</div>
+        </div>
+        {outcome ? (
+          <div className="mt-2">
+            <p className="text-sm text-[#2D2C28]">
+              You paid <strong>${Number(outcome.paid_usd).toLocaleString()}</strong>
+              {outcome.estimated_usd ? <> against an estimate of ${Number(outcome.estimated_usd).toLocaleString()}</> : null}.
+            </p>
+            {outcome.saved_usd > 0 ? (
+              <p className="mt-1 text-sm font-semibold text-[#2F6B45]">
+                🎉 You saved ${Number(outcome.saved_usd).toLocaleString()} — it's counted on your dashboard.
+              </p>
+            ) : (
+              <p className="mt-1 text-xs text-[#65635C]">Logged. Thanks for closing the loop!</p>
+            )}
+            <button
+              onClick={() => { setOutcome(null); setPaidInput(""); setOutcomeNote(""); }}
+              className="mt-2 text-xs text-[#D26D53] font-semibold hover:opacity-80"
+            >
+              Update amount
+            </button>
+          </div>
+        ) : (
+          <>
+            <p className="text-sm text-[#65635C] mt-1 mb-3 max-w-xl">
+              After your visit, tell us what you actually paid. We'll track your real savings
+              versus the estimate and show your total value on the dashboard.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8A887F] text-sm">$</span>
+                <input
+                  type="number" min="0" step="0.01"
+                  value={paidInput}
+                  onChange={(e) => setPaidInput(e.target.value)}
+                  placeholder="Amount you paid"
+                  className="rounded-xl border border-[#E5E2D9] bg-[#FAF9F6] pl-7 pr-3 py-2.5 text-sm w-full sm:w-48 focus:outline-none focus:ring-2 focus:ring-[#556045]/40"
+                />
+              </div>
+              <input
+                value={outcomeNote}
+                onChange={(e) => setOutcomeNote(e.target.value)}
+                placeholder="Note (optional) — e.g. vet waived the X-ray"
+                className="flex-1 rounded-xl border border-[#E5E2D9] bg-[#FAF9F6] px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#556045]/40"
+              />
+              <button
+                onClick={submitOutcome}
+                disabled={outcomeSaving}
+                className="rounded-xl bg-[#556045] hover:bg-[#465038] text-white px-4 py-2.5 text-sm font-semibold inline-flex items-center justify-center gap-2 disabled:opacity-60"
+              >
+                {outcomeSaving ? <Loader2 size={14} className="animate-spin" /> : <PiggyBank size={14} />}
+                Save outcome
+              </button>
+            </div>
+          </>
         )}
       </section>
 

@@ -1695,3 +1695,41 @@ async def submit_estimate_feedback(
         upsert=True,
     )
     return {"ok": True}
+
+
+# ── Outcome tracker: what the user actually paid (powers the savings metric) ──
+
+class BillOutcomeRequest(BaseModel):
+    paid_usd: float
+    note: str = ""
+
+
+@router.post("/estimates/{analysis_id}/outcome")
+async def log_estimate_outcome(
+    analysis_id: str,
+    payload: BillOutcomeRequest,
+    user: User = Depends(get_current_user),
+):
+    est = await db.estimates.find_one(
+        {"analysis_id": analysis_id, "user_id": user.user_id},
+        {"_id": 0, "estimated_total_usd": 1},
+    )
+    if not est:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+
+    estimated = float(est.get("estimated_total_usd") or 0)
+    paid = max(0.0, float(payload.paid_usd))
+    saved = round(max(0.0, estimated - paid), 2) if estimated else 0.0
+
+    outcome = {
+        "paid_usd":  round(paid, 2),
+        "saved_usd": saved,
+        "estimated_usd": round(estimated, 2),
+        "note":      (payload.note or "")[:500],
+        "logged_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.estimates.update_one(
+        {"analysis_id": analysis_id, "user_id": user.user_id},
+        {"$set": {"outcome": outcome}},
+    )
+    return {"ok": True, "outcome": outcome}

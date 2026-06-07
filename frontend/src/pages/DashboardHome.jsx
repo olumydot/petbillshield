@@ -34,6 +34,58 @@ function sinceLabel(dateStr) {
   return `${years}y ${rem}mo in your care`;
 }
 
+// ── Savings / value tracker banner ─────────────────────────────────────────────
+function SavingsBanner() {
+  const [data, setData] = useState(null);
+  useEffect(() => {
+    api.get("/stats/savings").then(({ data }) => setData(data)).catch(() => {});
+  }, []);
+  if (!data || data.bills_reviewed === 0) return null;
+
+  const usd = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  const headline = data.total_value_usd > 0
+    ? `You've saved ${usd(data.total_value_usd)} with PetBill Shield`
+    : `${usd(data.total_reviewed_usd)} in vet bills reviewed`;
+
+  const stats = [
+    { label: "Bills reviewed",     value: data.bills_reviewed,                 icon: FileSearch },
+    { label: "Total reviewed",     value: usd(data.total_reviewed_usd),        icon: Wallet },
+    { label: "Items flagged",      value: data.items_flagged,                  icon: ShieldCheck },
+    ...(data.confirmed_savings_usd > 0
+      ? [{ label: "Confirmed savings", value: usd(data.confirmed_savings_usd), icon: PiggyBank }]
+      : []),
+    ...(data.reimbursements_usd > 0
+      ? [{ label: "Reimbursed", value: usd(data.reimbursements_usd), icon: BadgeCheck }]
+      : []),
+  ];
+
+  return (
+    <section className="rounded-[26px] border border-[#3A4142] bg-gradient-to-br from-[#1B231C] to-[#171C1C] p-5 sm:p-6">
+      <div className="flex items-center gap-2 mb-1">
+        <PiggyBank size={16} className="text-[#6FA56B]" />
+        <span className="text-[10px] uppercase tracking-[0.18em] font-semibold text-[#6FA56B]">Your value</span>
+      </div>
+      <h3 className="font-serif-display text-2xl sm:text-3xl text-[#EFE8DA] leading-tight">
+        {headline}
+      </h3>
+      <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        {stats.map(({ label, value, icon: Icon }) => (
+          <div key={label} className="rounded-2xl border border-[#3A4142] bg-[#11140F]/40 p-3">
+            <Icon size={14} className="text-[#A6C48A] mb-1.5" />
+            <div className="font-mono text-lg font-bold text-[#EFE8DA]">{value}</div>
+            <div className="text-[11px] text-[#A8A196]">{label}</div>
+          </div>
+        ))}
+      </div>
+      {data.confirmed_savings_usd === 0 && (
+        <p className="mt-3 text-xs text-[#A8A196]">
+          Tip: open any analyzed bill and log what you actually paid — we'll track your real savings here.
+        </p>
+      )}
+    </section>
+  );
+}
+
 function money(value) {
   return Number(value || 0).toLocaleString(undefined, {
     minimumFractionDigits: 0,
@@ -583,6 +635,9 @@ export default function DashboardHome() {
           )}
         </div>
       </section>
+
+      {/* ── Savings / value tracker ───────────────────────────────── */}
+      <SavingsBanner />
 
       {/* ── First-time onboarding checklist ───────────────────────── */}
       <OnboardingCard pets={pets} estimates={estimates} reminders={reminders} />
