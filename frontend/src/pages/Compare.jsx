@@ -47,6 +47,7 @@ export default function Compare() {
   const [askingFollowUp, setAskingFollowUp] = useState(false);
 
   const [query, setQuery] = useState("");
+  const [pets, setPets] = useState([]);
 
   const { billing, loading: billingLoading } = useBilling();
 
@@ -70,7 +71,23 @@ export default function Compare() {
       })
       .finally(() => setLoading(false));
     loadPreviousComparisons();
+    api.get("/pets").then(({ data }) => setPets(data || [])).catch(() => {});
   }, []);
+
+  // Called when a bill is uploaded + analyzed inline; adds it and assigns a slot.
+  function handleNewAnalysis(est) {
+    if (!est?.analysis_id) return;
+    setEstimates((prev) => {
+      const next = [est, ...prev.filter((e) => e.analysis_id !== est.analysis_id)];
+      return next;
+    });
+    // Fill the first empty slot (A, then B), else replace A.
+    setAId((curA) => {
+      if (!curA) return est.analysis_id;
+      setBId((curB) => (curB ? curB : est.analysis_id));
+      return curA;
+    });
+  }
 
   async function loadPreviousComparisons() {
     try {
@@ -170,9 +187,14 @@ export default function Compare() {
       <section className="cream-card rounded-[30px] p-5 sm:p-6 fade-up delay-1">
         {loading || billingLoading ? (
           <LoadingBlock />
-        ) : estimates.length < 2 ? (
-          <EmptyCompare />
         ) : (
+          <div className="space-y-6">
+            {!compareLocked && (
+              <QuickUpload pets={pets} onAnalyzed={handleNewAnalysis} />
+            )}
+            {estimates.length < 2 ? (
+              <EmptyCompare uploaded={estimates.length} />
+            ) : (
           <div className="space-y-5">
             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
               <div>
@@ -258,6 +280,8 @@ export default function Compare() {
                 </span>
               )}
             </div>
+          </div>
+            )}
           </div>
         )}
       </section>
@@ -372,20 +396,92 @@ function LoadingBlock() {
   );
 }
 
-function EmptyCompare() {
+function EmptyCompare({ uploaded = 0 }) {
   return (
-    <div className="text-center py-10">
+    <div className="text-center py-6">
       <div className="mx-auto w-14 h-14 rounded-2xl bg-[#F2E5DE] text-[#D26D53] inline-flex items-center justify-center">
         <Scale size={24} />
       </div>
-
-      <h3 className="font-serif-display text-3xl mt-4">
-        You need at least two analyses.
+      <h3 className="font-serif-display text-2xl mt-4">
+        {uploaded === 0 ? "Upload two bills to compare" : "One more bill to compare"}
       </h3>
-
       <p className="text-sm text-[#65635C] mt-2 max-w-md mx-auto">
-        Analyze two bills first, then come back here to compare them side by side.
+        {uploaded === 0
+          ? "Use the uploader above to add two estimates — or analyze bills from the Analyze page — then pick two here."
+          : "You have 1 analysis. Upload one more above to start comparing side by side."}
       </p>
+    </div>
+  );
+}
+
+// ── Inline bill uploader for the compare page ──────────────────────────────────
+function QuickUpload({ pets, onAnalyzed }) {
+  const [file, setFile]       = useState(null);
+  const [petId, setPetId]     = useState("");
+  const [busy, setBusy]       = useState(false);
+  const [err, setErr]         = useState("");
+
+  const submit = async () => {
+    setErr("");
+    if (!file) { setErr("Choose a PDF or image of the bill."); return; }
+    if (pets.length > 0 && !petId) { setErr("Select which pet this bill is for."); return; }
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      if (petId) fd.append("pet_id", petId);
+      const { data } = await api.post("/estimates/analyze", fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+        timeout: 120000,
+      });
+      onAnalyzed(data);
+      setFile(null);
+      setErr("");
+    } catch (e) {
+      setErr(e?.response?.data?.detail || "Could not analyze that bill. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="rounded-[22px] border border-[#E5E2D9] bg-[#FAF9F6] p-4 sm:p-5">
+      <div className="eyebrow text-[#D26D53] mb-2">Add a bill to compare</div>
+      <p className="text-sm text-[#65635C] mb-4">
+        Upload a vet estimate (PDF or photo). We'll analyze it and add it to the list below so you can compare.
+      </p>
+      <div className="flex flex-col sm:flex-row gap-3">
+        {pets.length > 0 && (
+          <select
+            value={petId}
+            onChange={(e) => setPetId(e.target.value)}
+            className="rounded-xl border border-[#E5E2D9] bg-white px-3 py-2.5 text-sm text-[#2D2C28] focus:outline-none focus:ring-2 focus:ring-[#D26D53]/40 sm:w-48"
+          >
+            <option value="">Select pet…</option>
+            {pets.map((p) => (
+              <option key={p.pet_id} value={p.pet_id}>{p.name}</option>
+            ))}
+          </select>
+        )}
+        <label className="flex-1 cursor-pointer rounded-xl border border-dashed border-[#D9D4C8] bg-white px-3 py-2.5 text-sm text-[#65635C] hover:border-[#D26D53] transition flex items-center gap-2">
+          <FileText size={15} className="text-[#D26D53]" />
+          <span className="truncate">{file ? file.name : "Choose PDF or image…"}</span>
+          <input
+            type="file"
+            accept="application/pdf,image/jpeg,image/png,image/webp"
+            className="hidden"
+            onChange={(e) => { setFile(e.target.files?.[0] || null); setErr(""); }}
+          />
+        </label>
+        <button
+          onClick={submit}
+          disabled={busy}
+          className="btn-primary rounded-xl px-5 py-2.5 text-sm font-semibold inline-flex items-center justify-center gap-2 disabled:opacity-60"
+        >
+          {busy ? <><Loader2 size={15} className="animate-spin" /> Analyzing…</> : <><Sparkles size={15} /> Analyze &amp; add</>}
+        </button>
+      </div>
+      {err && <p className="text-sm text-[#8C2D14] mt-3">{err}</p>}
     </div>
   );
 }

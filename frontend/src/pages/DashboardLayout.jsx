@@ -422,7 +422,7 @@ export default function DashboardLayout() {
       data-plan-theme={tier.tone}
       data-testid="dashboard-layout"
     >
-      <header className="glass-header sticky top-0 z-40">
+      <header className="glass-header sticky top-0 z-50">
         <div className="max-w-[1400px] mx-auto px-5 sm:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2.5 min-w-0">
             {!isCheckoutPage && (
@@ -629,7 +629,7 @@ export default function DashboardLayout() {
           {!isCheckoutPage && (
 	        <aside
 	          data-testid="dashboard-sidebar"
-	          className={`relative z-[120] shrink-0 transition-all duration-300 ease-in-out hidden lg:block ${
+	          className={`relative z-0 shrink-0 transition-all duration-300 ease-in-out hidden lg:block ${
 	            sidebarCollapsed ? "w-14" : "w-72"
 	          }`}
 	        >
