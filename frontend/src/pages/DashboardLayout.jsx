@@ -24,6 +24,7 @@ import {
   PanelLeftOpen,
   CheckCircle2,
   Menu,
+  Calculator,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import SafetyDisclaimer from "../components/SafetyDisclaimer";
@@ -315,6 +316,12 @@ export default function DashboardLayout() {
       label: t("dashboard.analyze_a_bill"),
       icon: FileSearch,
       testid: "nav-analyze",
+    },
+    {
+      to: "/dashboard/estimator",
+      label: "Cost estimator",
+      icon: Calculator,
+      testid: "nav-estimator",
     },
     {
       to: "/dashboard/compare",
