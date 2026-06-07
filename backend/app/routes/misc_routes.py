@@ -642,14 +642,31 @@ class AnalysisShare(BaseModel):
     created_at: str
 
 
+class ShareCreate(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    # 0 / None = never expires; otherwise expire after N days (max ~1 year)
+    expires_in_days: Optional[int] = None
+
+
+def _share_expiry(expires_in_days: Optional[int]) -> Optional[str]:
+    if not expires_in_days or expires_in_days <= 0:
+        return None
+    days = min(int(expires_in_days), 365)
+    return (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
+
+
 @router.post("/estimates/{analysis_id}/share")
-async def create_share(analysis_id: str, user: User = Depends(get_current_user)):
+async def create_share(analysis_id: str, payload: ShareCreate | None = None, user: User = Depends(get_current_user)):
     row = await db.estimates.find_one({"analysis_id": analysis_id, "user_id": user.user_id}, {"_id": 0})
     if not row:
         raise HTTPException(status_code=404, detail="Analysis not found")
-    # Reuse existing non-revoked share if any
+    expires_at = _share_expiry((payload or ShareCreate()).expires_in_days)
+    # Reuse existing non-revoked share if any — but refresh its expiry to the new choice
     existing = await db.shares.find_one({"analysis_id": analysis_id, "user_id": user.user_id, "revoked": False}, {"_id": 0})
     if existing:
+        if existing.get("expires_at") != expires_at:
+            await db.shares.update_one({"share_id": existing["share_id"]}, {"$set": {"expires_at": expires_at}})
+            existing["expires_at"] = expires_at
         return existing
     share = {
         "share_id": f"shr_{uuid.uuid4().hex[:12]}",
@@ -658,6 +675,7 @@ async def create_share(analysis_id: str, user: User = Depends(get_current_user))
         "slug": uuid.uuid4().hex[:18],
         "revoked": False,
         "view_count": 0,
+        "expires_at": expires_at,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.shares.insert_one(dict(share))
@@ -686,6 +704,16 @@ async def public_analysis_by_slug(slug: str):
     share = await db.shares.find_one({"slug": slug, "revoked": False}, {"_id": 0})
     if not share:
         raise HTTPException(status_code=404, detail="This link is not available")
+    # Enforce expiry for time-limited links
+    exp = share.get("expires_at")
+    if exp:
+        try:
+            if datetime.fromisoformat(exp.replace("Z", "+00:00")) < datetime.now(timezone.utc):
+                raise HTTPException(status_code=410, detail="This link has expired")
+        except HTTPException:
+            raise
+        except Exception:
+            pass
     row = await db.estimates.find_one({"analysis_id": share["analysis_id"]}, {"_id": 0})
     if not row:
         raise HTTPException(status_code=404, detail="Analysis no longer exists")

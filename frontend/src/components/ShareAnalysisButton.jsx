@@ -10,18 +10,41 @@ export default function ShareAnalysisButton({ analysisId, testIdPrefix = "share"
   const [loading, setLoading] = useState(false);
   const [revoking, setRevoking] = useState(false);
   const [showRevokeConfirm, setShowRevokeConfirm] = useState(false);
+  const [expiry, setExpiry] = useState(0); // days; 0 = never
 
   async function openModal() {
     setOpen(true);
     if (share) return;
     setLoading(true);
     try {
-      const { data } = await api.post(`/estimates/${analysisId}/share`);
+      const { data } = await api.post(`/estimates/${analysisId}/share`, { expires_in_days: expiry || null });
       setShare(data);
     } catch {
       toast.error("Couldn't create share link.");
       setOpen(false);
     } finally { setLoading(false); }
+  }
+
+  async function changeExpiry(days) {
+    setExpiry(days);
+    if (!share) return;
+    setLoading(true);
+    try {
+      const { data } = await api.post(`/estimates/${analysisId}/share`, { expires_in_days: days || null });
+      setShare(data);
+      toast.success(days ? `Link now expires in ${days} day${days === 1 ? "" : "s"}` : "Link set to never expire");
+    } catch {
+      toast.error("Couldn't update expiry.");
+    } finally { setLoading(false); }
+  }
+
+  function expiryLabel(iso) {
+    if (!iso) return "Never expires";
+    try {
+      const d = new Date(iso);
+      const days = Math.max(0, Math.ceil((d.getTime() - Date.now()) / 86400000));
+      return days <= 0 ? "Expired" : `Expires in ${days} day${days === 1 ? "" : "s"} · ${d.toLocaleDateString()}`;
+    } catch { return "Never expires"; }
   }
 
   const url = share ? `${window.location.origin}/share/${share.slug}` : "";
@@ -87,7 +110,25 @@ export default function ShareAnalysisButton({ analysisId, testIdPrefix = "share"
                       <Copy size={13}/> Copy
                     </button>
                   </div>
-                  <p className="text-xs text-[#65635C] mt-3">Views so far: <span className="font-mono-clean">{share.view_count || 0}</span></p>
+                  <div className="mt-4">
+                    <label className="text-[11px] font-semibold text-[#8A887F] uppercase tracking-wider block mb-1.5">Link expiry</label>
+                    <select
+                      value={expiry}
+                      onChange={(e) => changeExpiry(Number(e.target.value))}
+                      className="w-full rounded-xl border border-[#E5E2D9] bg-white px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#D26D53]/40"
+                      data-testid={`${testIdPrefix}-expiry`}
+                    >
+                      <option value={0}>Never expires</option>
+                      <option value={1}>1 day</option>
+                      <option value={7}>7 days</option>
+                      <option value={30}>30 days</option>
+                      <option value={90}>90 days</option>
+                    </select>
+                  </div>
+                  <p className="text-xs text-[#65635C] mt-3 flex items-center justify-between">
+                    <span>Views so far: <span className="font-mono-clean">{share.view_count || 0}</span></span>
+                    <span className="text-[#8A887F]">{expiryLabel(share.expires_at)}</span>
+                  </p>
                 </>
               )}
             </div>
