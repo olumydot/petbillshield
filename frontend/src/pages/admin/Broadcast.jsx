@@ -1,5 +1,5 @@
-import { useState, useRef } from "react";
-import { Send, Sparkles, Loader2, Users, Check, ImagePlus } from "lucide-react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { Send, Sparkles, Loader2, Users, Check, ImagePlus, CalendarClock, Trash2, Plus } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import ConfirmModal from "@/components/ConfirmModal";
@@ -11,6 +11,8 @@ const SEGMENTS = [
   { id: "paid",        label: "Paid subscribers",         desc: "Active subscribers only" },
   { id: "all",         label: "All users",                desc: "Every registered user (use carefully)" },
 ];
+
+const DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 export default function Broadcast() {
   const [segment,     setSegment]     = useState("newsletter");
@@ -229,6 +231,8 @@ export default function Broadcast() {
         </div>
       )}
 
+      <ScheduledCampaigns />
+
       {showHistory && history && (
         <div className="space-y-2">
           <div className="text-[10px] uppercase tracking-widest text-[#65635C] font-semibold">Broadcast history</div>
@@ -245,6 +249,143 @@ export default function Broadcast() {
               <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
                 c.status === "done" ? "bg-[#E8F5EC] text-[#2F6B45]" : "bg-[#3D320A] text-[#E6AE2E]"
               }`}>{c.status}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Recurring newsletter / weekly-tips auto-send ───────────────────────────────
+function ScheduledCampaigns() {
+  const [list, setList]       = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [saving, setSaving]   = useState(false);
+  const [form, setForm] = useState({
+    name: "", segment: "newsletter", cadence: "monthly",
+    subject: "", html_body: "", send_dow: 0, send_dom: 1, send_hour: 14, enabled: true,
+  });
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data } = await api.get("/admin/portal/scheduled-campaigns");
+      setList(data.campaigns || []);
+    } catch { /* silent */ }
+    finally { setLoading(false); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const create = async () => {
+    if (!form.name.trim() || !form.subject.trim() || !form.html_body.trim()) {
+      toast.error("Name, subject, and body are required."); return;
+    }
+    setSaving(true);
+    try {
+      await api.post("/admin/portal/scheduled-campaigns", form);
+      toast.success("Scheduled campaign created.");
+      setShowForm(false);
+      setForm({ name: "", segment: "newsletter", cadence: "monthly", subject: "", html_body: "", send_dow: 0, send_dom: 1, send_hour: 14, enabled: true });
+      load();
+    } catch (e) { toast.error(e?.response?.data?.detail || "Couldn't create"); }
+    finally { setSaving(false); }
+  };
+
+  const toggle = async (c) => {
+    try { await api.patch(`/admin/portal/scheduled-campaigns/${c.campaign_id}`, { enabled: !c.enabled }); load(); }
+    catch { toast.error("Couldn't update"); }
+  };
+  const remove = async (c) => {
+    if (!window.confirm(`Delete "${c.name}"?`)) return;
+    try { await api.delete(`/admin/portal/scheduled-campaigns/${c.campaign_id}`); load(); }
+    catch { toast.error("Couldn't delete"); }
+  };
+  const sendNow = async (c) => {
+    if (!window.confirm(`Send "${c.name}" to its segment now?`)) return;
+    try { const { data } = await api.post(`/admin/portal/scheduled-campaigns/${c.campaign_id}/send-now`); toast.success(`Sent to ${data.sent}`); load(); }
+    catch (e) { toast.error(e?.response?.data?.detail || "Send failed"); }
+  };
+
+  const scheduleLabel = (c) =>
+    c.cadence === "weekly"
+      ? `Every ${DOW[c.send_dow] || "Mon"} at ${String(c.send_hour).padStart(2, "0")}:00 UTC`
+      : `Monthly on day ${c.send_dom} at ${String(c.send_hour).padStart(2, "0")}:00 UTC`;
+
+  const inp = "w-full rounded-xl border border-[#2A2924] bg-[#111] text-[#FAF9F6] text-sm px-3 py-2.5 placeholder:text-[#65635C] focus:outline-none focus:ring-1 focus:ring-[#D26D53]";
+
+  return (
+    <div className="border-t border-[#2A2924] pt-6 space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <CalendarClock size={14} className="text-[#E6AE2E]" />
+          <div className="text-[10px] uppercase tracking-widest text-[#65635C] font-semibold">Scheduled auto-send</div>
+        </div>
+        <button onClick={() => setShowForm((v) => !v)}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-[#2A2924] bg-[#1A1917] hover:bg-[#2A2924] text-[#FAF9F6] text-xs font-semibold px-2.5 py-1 transition">
+          <Plus size={11} /> New recurring campaign
+        </button>
+      </div>
+      <p className="text-[11px] text-[#65635C]">
+        Recurring emails sent automatically to an opted-in segment on a weekly or monthly schedule (checked hourly, UTC).
+      </p>
+
+      {showForm && (
+        <div className="rounded-2xl border border-[#2A2924] bg-[#1A1917] p-4 space-y-3">
+          <input className={inp} placeholder="Internal name (e.g. Monthly newsletter)" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          <div className="grid grid-cols-2 gap-2">
+            <select className={inp} value={form.segment} onChange={(e) => setForm({ ...form, segment: e.target.value })}>
+              {SEGMENTS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+            </select>
+            <select className={inp} value={form.cadence} onChange={(e) => setForm({ ...form, cadence: e.target.value })}>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {form.cadence === "weekly" ? (
+              <select className={inp} value={form.send_dow} onChange={(e) => setForm({ ...form, send_dow: Number(e.target.value) })}>
+                {DOW.map((d, i) => <option key={d} value={i}>{d}</option>)}
+              </select>
+            ) : (
+              <input className={inp} type="number" min={1} max={28} value={form.send_dom} onChange={(e) => setForm({ ...form, send_dom: Number(e.target.value) })} placeholder="Day of month (1–28)" />
+            )}
+            <input className={inp} type="number" min={0} max={23} value={form.send_hour} onChange={(e) => setForm({ ...form, send_hour: Number(e.target.value) })} placeholder="Hour (UTC 0–23)" />
+          </div>
+          <input className={inp} placeholder="Subject line" value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} />
+          <textarea className={`${inp} resize-none font-mono`} rows={6} placeholder="Body — text becomes paragraphs; raw HTML and <img> allowed." value={form.html_body} onChange={(e) => setForm({ ...form, html_body: e.target.value })} />
+          <button onClick={create} disabled={saving}
+            className="rounded-xl bg-[#D26D53] hover:bg-[#C05E45] text-white text-sm font-semibold px-4 py-2.5 inline-flex items-center gap-2 disabled:opacity-40">
+            {saving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Create campaign
+          </button>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="text-[#65635C] text-sm animate-pulse">Loading…</div>
+      ) : list.length === 0 ? (
+        <p className="text-sm text-[#65635C]">No scheduled campaigns yet.</p>
+      ) : (
+        <div className="space-y-2">
+          {list.map((c) => (
+            <div key={c.campaign_id} className="rounded-xl border border-[#2A2924] bg-[#1A1917] px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-sm font-medium text-[#FAF9F6] truncate">{c.name}</div>
+                  <div className="text-xs text-[#65635C] mt-0.5">
+                    {c.segment} · {scheduleLabel(c)}{c.last_sent_at ? ` · last sent ${new Date(c.last_sent_at).toLocaleDateString()}` : " · never sent"}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button onClick={() => toggle(c)}
+                    className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${c.enabled ? "bg-[#E8F5EC] text-[#2F6B45]" : "bg-[#2A2924] text-[#8A887F]"}`}>
+                    {c.enabled ? "Active" : "Paused"}
+                  </button>
+                  <button onClick={() => sendNow(c)} className="text-[#65635C] hover:text-[#E6AE2E]" title="Send now"><Send size={13} /></button>
+                  <button onClick={() => remove(c)} className="text-[#65635C] hover:text-[#F87171]" title="Delete"><Trash2 size={13} /></button>
+                </div>
+              </div>
             </div>
           ))}
         </div>

@@ -20,6 +20,7 @@ function GoogleIcon() {
 export default function AuthPage() {
   const [searchParams]   = useSearchParams();
   const resetToken       = searchParams.get("reset_token");
+  const timedOut         = searchParams.get("reason") === "timeout";
 
   const [mode,             setMode]             = useState(resetToken ? "reset" : "login");
   const [firstName,        setFirstName]        = useState("");
@@ -178,6 +179,13 @@ export default function AuthPage() {
               <h2 className="font-serif-display text-3xl text-[#2D2C28]">{titles[mode]}</h2>
               <p className="text-sm text-[#8A887F] mt-1.5">{subtitles[mode]}</p>
             </div>
+
+            {/* Inactivity timeout notice */}
+            {timedOut && mode === "login" && (
+              <div className="mb-6 rounded-2xl bg-[#FFF8EE] border border-[#F5D993] px-4 py-3 text-sm text-[#8A5A24] text-center">
+                You were signed out after 30 minutes of inactivity. Please sign in again to continue.
+              </div>
+            )}
 
             {/* Mode tabs */}
             {!resetToken && mode !== "forgot" && mode !== "reset" && (

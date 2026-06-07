@@ -951,6 +951,157 @@ async def portal_broadcast_history(_: User = Depends(require_admin)):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+#  SCHEDULED CAMPAIGNS  (recurring newsletter / weekly tips auto-send)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class ScheduledCampaignRequest(BaseModel):
+    name:      str
+    segment:   str = "newsletter"          # newsletter | tips_guides | offers | paid | all
+    cadence:   str = "monthly"             # weekly | monthly
+    subject:   str
+    html_body: str
+    send_dow:  int = 0                      # weekly: 0=Mon … 6=Sun
+    send_dom:  int = 1                      # monthly: day-of-month 1–28
+    send_hour: int = 14                     # UTC hour 0–23
+    enabled:   bool = True
+
+
+@router.get("/admin/portal/scheduled-campaigns")
+async def portal_list_scheduled(_: User = Depends(require_admin)):
+    rows = await db.scheduled_campaigns.find({}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    return {"campaigns": rows}
+
+
+@router.post("/admin/portal/scheduled-campaigns")
+async def portal_create_scheduled(payload: ScheduledCampaignRequest, admin: User = Depends(require_admin)):
+    if payload.cadence not in ("weekly", "monthly"):
+        raise HTTPException(status_code=400, detail="cadence must be weekly or monthly")
+    cid = f"sched_{uuid.uuid4().hex[:10]}"
+    doc = {
+        "campaign_id": cid,
+        "name":      payload.name,
+        "segment":   payload.segment,
+        "cadence":   payload.cadence,
+        "subject":   payload.subject,
+        "html_body": payload.html_body,
+        "send_dow":  max(0, min(6, payload.send_dow)),
+        "send_dom":  max(1, min(28, payload.send_dom)),
+        "send_hour": max(0, min(23, payload.send_hour)),
+        "enabled":   payload.enabled,
+        "last_sent_at": None,
+        "created_by": admin.user_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.scheduled_campaigns.insert_one(doc)
+    doc.pop("_id", None)
+    return {"ok": True, "campaign": doc}
+
+
+@router.patch("/admin/portal/scheduled-campaigns/{campaign_id}")
+async def portal_update_scheduled(campaign_id: str, payload: dict, _: User = Depends(require_admin)):
+    allowed = {"name", "segment", "cadence", "subject", "html_body",
+               "send_dow", "send_dom", "send_hour", "enabled"}
+    updates = {k: v for k, v in payload.items() if k in allowed}
+    if not updates:
+        raise HTTPException(status_code=400, detail="No valid fields to update")
+    updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+    res = await db.scheduled_campaigns.update_one({"campaign_id": campaign_id}, {"$set": updates})
+    if not res.matched_count:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    return {"ok": True}
+
+
+@router.delete("/admin/portal/scheduled-campaigns/{campaign_id}")
+async def portal_delete_scheduled(campaign_id: str, _: User = Depends(require_admin)):
+    await db.scheduled_campaigns.delete_one({"campaign_id": campaign_id})
+    return {"ok": True}
+
+
+@router.post("/admin/portal/scheduled-campaigns/{campaign_id}/send-now")
+async def portal_send_scheduled_now(campaign_id: str, _: User = Depends(require_admin)):
+    camp = await db.scheduled_campaigns.find_one({"campaign_id": campaign_id}, {"_id": 0})
+    if not camp:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    result = await _send_scheduled_campaign(camp)
+    return {"ok": True, **result}
+
+
+async def _send_scheduled_campaign(camp: dict) -> dict:
+    """Send one scheduled campaign to its segment. Returns counts."""
+    recipients = await _get_segment_emails(camp.get("segment", "newsletter"))
+    sent = 0
+    failed = 0
+    for r in recipients:
+        try:
+            html = _email_html(camp["subject"], camp["html_body"], to_name=r.get("name", ""))
+            resend.Emails.send({
+                "from": SENDER_EMAIL, "to": r["email"],
+                "subject": camp["subject"], "html": html,
+            })
+            sent += 1
+        except Exception as e:
+            logger.warning(f"scheduled campaign send failed for {r.get('email')}: {e}")
+            failed += 1
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    await db.scheduled_campaigns.update_one(
+        {"campaign_id": camp["campaign_id"]},
+        {"$set": {"last_sent_at": now_iso}},
+    )
+    await db.broadcast_campaigns.insert_one({
+        "campaign_id": str(uuid.uuid4()),
+        "subject": camp["subject"],
+        "segment": camp.get("segment"),
+        "recipient_count": len(recipients),
+        "sent": sent, "failed": failed,
+        "status": "done",
+        "source": f"scheduled:{camp['campaign_id']}",
+        "created_at": now_iso,
+        "finished_at": now_iso,
+    })
+    return {"sent": sent, "failed": failed, "recipients": len(recipients)}
+
+
+async def dispatch_scheduled_campaigns():
+    """Cron entrypoint (run hourly). Sends any enabled campaign that is due in
+    the current hour and hasn't already gone out this period."""
+    now = datetime.now(timezone.utc)
+    cursor = db.scheduled_campaigns.find({"enabled": True}, {"_id": 0})
+    async for camp in cursor:
+        try:
+            if camp.get("send_hour", 14) != now.hour:
+                continue
+
+            cadence = camp.get("cadence", "monthly")
+            due = False
+            if cadence == "weekly":
+                due = now.weekday() == camp.get("send_dow", 0)
+            elif cadence == "monthly":
+                due = now.day == camp.get("send_dom", 1)
+            if not due:
+                continue
+
+            # Don't double-send within the same period
+            last = camp.get("last_sent_at")
+            if last:
+                try:
+                    last_dt = datetime.fromisoformat(last)
+                    if last_dt.tzinfo is None:
+                        last_dt = last_dt.replace(tzinfo=timezone.utc)
+                    min_gap_days = 5 if cadence == "weekly" else 25
+                    if (now - last_dt).days < min_gap_days:
+                        continue
+                except Exception:
+                    pass
+
+            res = await _send_scheduled_campaign(camp)
+            logger.info(f"scheduled campaign '{camp.get('name')}' sent: {res}")
+        except Exception as e:
+            logger.warning(f"dispatch_scheduled_campaigns error for {camp.get('campaign_id')}: {e}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 #  PROMOS  (Stripe coupons + promotion codes)
 # ═══════════════════════════════════════════════════════════════════════════════
 

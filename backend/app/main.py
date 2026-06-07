@@ -21,7 +21,7 @@ from app.routes.forecast_routes import router as forecast_router
 from app.routes.pet_premium_features import router as pet_premium_router
 from app.routes.user_routes import router as user_router
 from app.routes.content_routes import router as content_router
-from app.routes.admin_portal_routes import router as admin_portal_router
+from app.routes.admin_portal_routes import router as admin_portal_router, dispatch_scheduled_campaigns
 from app.routes.weekly_report_routes import (
     router as weekly_report_router,
     enqueue_weekly_account_reports,
@@ -261,6 +261,15 @@ async def startup_scheduler():
             minute="*/5",
             timezone="America/Chicago",
             id="weekly_account_reports_send",
+            coalesce=True,
+            max_instances=1,
+        )
+        # Recurring newsletter / weekly-tips auto-send — checked hourly on the hour.
+        scheduler.add_job(
+            dispatch_scheduled_campaigns,
+            "cron",
+            minute=0,
+            id="scheduled_campaigns_dispatch",
             coalesce=True,
             max_instances=1,
         )
