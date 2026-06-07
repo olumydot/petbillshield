@@ -22,6 +22,7 @@ from app.shared import (
     db,
     logger,
     ROOT_DIR,
+    UPLOAD_ROOT,
     MAX_UPLOAD_BYTES,
     MAX_UPLOAD_MB,
     ESTIMATE_UPLOAD_DIR,
@@ -310,7 +311,7 @@ async def upload_pet_picture(
         "image/webp": "webp",
     }[file.content_type]
 
-    upload_dir = ROOT_DIR / "uploads" / "pet_pictures"
+    upload_dir = UPLOAD_ROOT / "pet_pictures"
     upload_dir.mkdir(parents=True, exist_ok=True)
 
     filename = f"{pet_id}.{ext}"

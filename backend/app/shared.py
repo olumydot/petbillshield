@@ -179,7 +179,11 @@ def _plan_tier_key(plan_id: str | None) -> str:
     if "rescue" in plan_id: return "rescue"
     return "free"
 
-UPLOAD_ROOT = ROOT_DIR / "uploads"
+# Upload storage root. Defaults to the app dir (fine for local dev), but on
+# hosts with an EPHEMERAL filesystem (Render, Railway, Fly, etc.) set UPLOAD_DIR
+# to a mounted persistent disk (e.g. /var/data/uploads) so user-uploaded pet &
+# profile photos survive redeploys.
+UPLOAD_ROOT = Path(os.environ.get("UPLOAD_DIR", str(ROOT_DIR / "uploads")))
 ESTIMATE_UPLOAD_DIR = UPLOAD_ROOT / "estimates"
 CLAIM_UPLOAD_DIR = UPLOAD_ROOT / "claims"
 

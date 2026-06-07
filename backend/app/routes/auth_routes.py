@@ -14,6 +14,7 @@ from google.auth.transport import requests as google_requests
 
 from app.shared import (
     ROOT_DIR,
+    UPLOAD_ROOT,
     db,
     os,
     IS_PRODUCTION,
@@ -67,7 +68,7 @@ async def upload_profile_picture(
         "image/webp": "webp",
     }[file.content_type]
 
-    upload_dir = ROOT_DIR / "uploads" / "profile_pictures"
+    upload_dir = UPLOAD_ROOT / "profile_pictures"
     upload_dir.mkdir(parents=True, exist_ok=True)
 
     filename = f"{user.user_id}.{ext}"

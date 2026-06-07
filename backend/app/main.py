@@ -6,7 +6,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from slowapi.errors import RateLimitExceeded
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from app.shared import ROOT_DIR, db, client, os, logger, IS_PRODUCTION, hashlib
+from app.shared import ROOT_DIR, db, client, os, logger, IS_PRODUCTION, hashlib, UPLOAD_ROOT
 from app.routes.auth_routes import router as auth_router
 from app.routes.pet_routes import router as pet_router
 from app.routes.estimate_routes import router as estimate_router
@@ -134,7 +134,8 @@ app.include_router(weekly_report_router, prefix="/api")
 async def root():
     return {"app": "PetBill Shield", "status": "ok"}
 
-uploads_dir = ROOT_DIR / "uploads"
+# Serve uploads from the configurable UPLOAD_ROOT (persistent disk in prod).
+uploads_dir = UPLOAD_ROOT
 uploads_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
 
