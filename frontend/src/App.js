@@ -22,6 +22,7 @@ const Reminders = lazy(() => import("@/pages/Reminders"));
 const Compare = lazy(() => import("@/pages/Compare"));
 const CostEstimator = lazy(() => import("@/pages/CostEstimator"));
 const SharedAnalysis = lazy(() => import("@/pages/SharedAnalysis"));
+const HouseholdView = lazy(() => import("@/pages/HouseholdView"));
 const Contact = lazy(() => import("@/pages/Contact"));
 const AuthPage = lazy(() => import("@/pages/AuthPage"));
 const PetTimeline = lazy(() => import("@/pages/PetTimeline"));
@@ -60,6 +61,7 @@ function AppRouter() {
       <Route path="/auth" element={<AuthPage />} />
       <Route path="/contact" element={<Contact />} />
       <Route path="/share/:slug" element={<SharedAnalysis />} />
+      <Route path="/household/:slug" element={<HouseholdView />} />
       <Route
         path="/dashboard"
         element={

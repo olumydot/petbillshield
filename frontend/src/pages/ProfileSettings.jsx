@@ -5,6 +5,7 @@ import {
   User as UserIcon, Mail, Lock, Bell, Trash2, Check, Loader2,
   AlertTriangle, ShieldCheck, LogOut, ExternalLink, ChevronRight,
   Eye, EyeOff, Chrome, Pencil, X, CreditCard, Tag, Sparkles,
+  Users, Copy, ShieldOff,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "../context/AuthContext";
@@ -94,6 +95,99 @@ function Section({ icon: Icon, title, subtitle, children, accent = "#D26D53" }) 
       </div>
       <div className="px-6 py-5">{children}</div>
     </div>
+  );
+}
+
+// ── Household (family) read-only sharing ──────────────────────────────────────
+function HouseholdShareSection() {
+  const [share, setShare]   = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy]     = useState(false);
+  const [showRevoke, setShowRevoke] = useState(false);
+
+  useEffect(() => {
+    api.get("/household/share")
+      .then(({ data }) => setShare(data && data.slug ? data : null))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const url = share ? `${window.location.origin}/household/${share.slug}` : "";
+
+  async function generate() {
+    setBusy(true);
+    try {
+      const { data } = await api.post("/household/share");
+      setShare(data);
+    } catch {
+      toast.error("Couldn't create the link.");
+    } finally { setBusy(false); }
+  }
+
+  async function copy() {
+    try { await navigator.clipboard.writeText(url); toast.success("Link copied"); }
+    catch { toast.error("Copy failed"); }
+  }
+
+  async function revoke() {
+    setBusy(true);
+    try {
+      await api.delete(`/household/share/${share.household_id}`);
+      setShare(null);
+      setShowRevoke(false);
+      toast.success("Household link revoked");
+    } catch {
+      toast.error("Couldn't revoke");
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <Section icon={Users} title="Family / household access" accent="#556045"
+      subtitle="Share a read-only view of your pets and their records with family or a sitter.">
+      {loading ? (
+        <div className="text-sm text-[#65635C] inline-flex items-center gap-2"><Loader2 size={15} className="animate-spin" />Loading…</div>
+      ) : !share ? (
+        <div>
+          <p className="text-sm text-[#65635C] mb-4 leading-relaxed max-w-xl">
+            Generate one secure link that lets anyone view (but never change) your pets and their
+            health records — perfect for a partner, pet sitter, or family member. You can revoke it anytime.
+          </p>
+          <button onClick={generate} disabled={busy}
+            className="btn-primary rounded-xl px-4 py-2.5 text-sm font-semibold inline-flex items-center gap-2 disabled:opacity-60">
+            {busy ? <Loader2 size={14} className="animate-spin" /> : <Users size={14} />}
+            Create household link
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 rounded-xl border border-[#E5E2D9] bg-[#FAF9F6] p-3">
+            <input readOnly value={url} onFocus={(e) => e.target.select()}
+              className="flex-1 bg-transparent text-xs font-mono text-[#2D2C28] focus:outline-none" />
+            <button onClick={copy} className="btn-primary rounded-md px-3 py-1.5 text-xs inline-flex items-center gap-1.5">
+              <Copy size={13} /> Copy
+            </button>
+          </div>
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-[#8A887F]">Read-only · views: <span className="font-mono">{share.view_count || 0}</span></p>
+            <button onClick={() => setShowRevoke(true)} disabled={busy}
+              className="text-xs font-semibold text-[#8C2D14] inline-flex items-center gap-1.5 hover:opacity-80 disabled:opacity-50">
+              <ShieldOff size={13} /> Revoke link
+            </button>
+          </div>
+        </div>
+      )}
+
+      <ConfirmModal
+        open={showRevoke}
+        title="Revoke household link?"
+        description="Anyone with this link will immediately lose access to your pets and records."
+        confirmLabel={busy ? "Revoking…" : "Revoke link"}
+        tone="danger"
+        busy={busy}
+        onCancel={() => setShowRevoke(false)}
+        onConfirm={revoke}
+      />
+    </Section>
   );
 }
 
@@ -257,6 +351,9 @@ export default function ProfileSettings() {
 
       {/* ── Notifications ── */}
       <NotificationsSection settings={settings} onUpdate={loadSettings} />
+
+      {/* ── Family / household sharing ── */}
+      <HouseholdShareSection />
 
       {/* ── Account control ── */}
       <AccountSection settings={settings} isExternal={isExternal} />

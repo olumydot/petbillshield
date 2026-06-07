@@ -727,6 +727,109 @@ async def public_analysis_by_slug(slug: str):
     }
 
 
+# -------------------- Household read-only sharing --------------------
+# A lightweight "family access" feature: the owner generates one unguessable
+# link; anyone with it gets a READ-ONLY view of the owner's pets and records.
+# No member accounts, no write access — owner can revoke instantly.
+
+def _public_pet(pet: dict) -> dict:
+    return {
+        "pet_id":   pet.get("pet_id"),
+        "name":     pet.get("name") or "Pet",
+        "species":  pet.get("species") or "",
+        "breed":    pet.get("breed") or "",
+        "age_years": pet.get("age_years"),
+        "sex":      pet.get("sex") or "",
+        "picture":  pet.get("picture") or "",
+        "chronic_conditions": pet.get("chronic_conditions") or [],
+    }
+
+
+def _public_record(rec: dict) -> dict:
+    return {
+        "record_id":   rec.get("record_id"),
+        "record_type": rec.get("record_type") or "note",
+        "title":       rec.get("title") or "",
+        "details":     rec.get("details") or "",
+        "amount_usd":  rec.get("amount_usd"),
+        "category":    rec.get("category") or "other",
+        "date":        rec.get("date") or "",
+        "created_at":  rec.get("created_at") or "",
+    }
+
+
+@router.post("/household/share")
+async def create_household_share(user: User = Depends(get_current_user)):
+    existing = await db.household_shares.find_one(
+        {"owner_user_id": user.user_id, "revoked": False}, {"_id": 0}
+    )
+    if existing:
+        return existing
+    doc = {
+        "household_id":  f"hh_{uuid.uuid4().hex[:12]}",
+        "owner_user_id": user.user_id,
+        "slug":          uuid.uuid4().hex[:20],
+        "revoked":       False,
+        "view_count":    0,
+        "created_at":    datetime.now(timezone.utc).isoformat(),
+    }
+    await db.household_shares.insert_one(dict(doc))
+    return doc
+
+
+@router.get("/household/share")
+async def get_household_share(user: User = Depends(get_current_user)):
+    doc = await db.household_shares.find_one(
+        {"owner_user_id": user.user_id, "revoked": False}, {"_id": 0}
+    )
+    return doc or {}
+
+
+@router.delete("/household/share/{household_id}")
+async def revoke_household_share(household_id: str, user: User = Depends(get_current_user)):
+    result = await db.household_shares.update_one(
+        {"household_id": household_id, "owner_user_id": user.user_id},
+        {"$set": {"revoked": True}},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Household link not found")
+    return {"ok": True}
+
+
+@router.get("/public/household/{slug}")
+async def public_household(slug: str):
+    share = await db.household_shares.find_one({"slug": slug, "revoked": False}, {"_id": 0})
+    if not share:
+        raise HTTPException(status_code=404, detail="This household link is not available")
+    owner = await db.users.find_one({"user_id": share["owner_user_id"]}, {"_id": 0, "name": 1}) or {}
+    pets = await db.pets.find({"user_id": share["owner_user_id"]}, {"_id": 0}).to_list(500)
+    await db.household_shares.update_one({"household_id": share["household_id"]}, {"$inc": {"view_count": 1}})
+    return {
+        "owner_name": owner.get("name") or "A PetBill Shield member",
+        "pets":       [_public_pet(p) for p in pets],
+        "slug":       slug,
+    }
+
+
+@router.get("/public/household/{slug}/pets/{pet_id}")
+async def public_household_pet(slug: str, pet_id: str):
+    share = await db.household_shares.find_one({"slug": slug, "revoked": False}, {"_id": 0})
+    if not share:
+        raise HTTPException(status_code=404, detail="This household link is not available")
+    pet = await db.pets.find_one(
+        {"pet_id": pet_id, "user_id": share["owner_user_id"]}, {"_id": 0}
+    )
+    if not pet:
+        raise HTTPException(status_code=404, detail="Pet not found")
+    records = await db.pet_records.find(
+        {"pet_id": pet_id, "user_id": share["owner_user_id"]}, {"_id": 0}
+    ).sort("created_at", -1).to_list(2000)
+    return {
+        "pet":     _public_pet(pet),
+        "records": [_public_record(r) for r in records],
+    }
+
+
 # -------------------- Spend trends --------------------
 @router.get("/stats/trends")
 async def stats_trends(months: int = 6, user: User = Depends(get_current_user)):
