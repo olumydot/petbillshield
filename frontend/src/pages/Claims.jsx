@@ -35,6 +35,122 @@ function getOutcome(result) {
   return OUTCOMES[key] || null;
 }
 
+// ── Insurance worth-it analyzer ───────────────────────────────────────────────
+const PREMIUM_KEY = "petbill_monthly_premium";
+
+function InsuranceWorthItCard({ claims }) {
+  const [premium, setPremium] = useState(() => localStorage.getItem(PREMIUM_KEY) || "");
+  const [months, setMonths]   = useState(12);
+  const [open, setOpen]       = useState(false);
+
+  useEffect(() => {
+    if (premium !== "") localStorage.setItem(PREMIUM_KEY, premium);
+  }, [premium]);
+
+  const monthly = parseFloat(premium);
+  const hasPremium = Number.isFinite(monthly) && monthly > 0;
+
+  const cutoff = Date.now() - months * 30 * 24 * 60 * 60 * 1000;
+  let reimbursed = 0;
+  let counted = 0;
+  for (const c of claims || []) {
+    const raw = c.created_at || "";
+    let ts = 0;
+    try { ts = new Date(raw).getTime(); } catch (_) { ts = 0; }
+    if (ts && ts < cutoff) continue;
+    const amt = c.actual_reimbursement_usd ?? c.estimated_reimbursement_usd;
+    if (amt) { reimbursed += Number(amt); counted += 1; }
+  }
+
+  const premiumPaid = hasPremium ? monthly * months : 0;
+  const net = reimbursed - premiumPaid;
+  const usd = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+
+  const verdict = !hasPremium ? null
+    : net >= 0
+      ? { tone: "good", title: "Your insurance is paying off", note: `Over the last ${months} months, reimbursements exceeded your premiums by ${usd(net)}.` }
+      : net > -premiumPaid * 0.34
+        ? { tone: "ok", title: "Roughly breaking even", note: `You're ${usd(Math.abs(net))} behind on premiums — one big claim could flip this in your favor. Worth keeping if your pet is older or accident-prone.` }
+        : { tone: "warn", title: "Worth a closer look", note: `You've paid ${usd(Math.abs(net))} more in premiums than you've recovered. That can still be fine as catastrophic coverage — but compare against a dedicated savings fund.` };
+
+  const toneStyles = {
+    good: "bg-[#E8F5EC] border-[#C8E8D4] text-[#2F6B45]",
+    ok:   "bg-[#FEF6E4] border-[#F5D993] text-[#8A5A24]",
+    warn: "bg-[#FEF0EE] border-[#F2C5B7] text-[#8C2D14]",
+  };
+
+  return (
+    <div className="cream-card rounded-[24px] overflow-hidden">
+      <button onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between p-5 text-left">
+        <div className="flex items-center gap-3">
+          <span className="w-10 h-10 rounded-2xl bg-[#556045]/12 text-[#556045] inline-flex items-center justify-center shrink-0">
+            <DollarSign size={18} />
+          </span>
+          <div>
+            <div className="font-serif-display text-xl text-[#2D2C28]">Is your insurance worth it?</div>
+            <div className="text-xs text-[#65635C]">See whether premiums are paying off vs. your reimbursements.</div>
+          </div>
+        </div>
+        <ChevronDown size={18} className={`text-[#8A887F] transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <div className="px-5 pb-5 space-y-4 border-t border-[#EFECE3] pt-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-[11px] font-semibold text-[#8A887F] uppercase tracking-wider block mb-1.5">Your monthly premium</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8A887F] text-sm">$</span>
+                <input type="number" min="0" step="0.01" value={premium}
+                  onChange={(e) => setPremium(e.target.value)} placeholder="e.g. 45"
+                  className="w-full rounded-xl border border-[#E5E2D9] bg-white pl-7 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#556045]/40" />
+              </div>
+            </div>
+            <div>
+              <label className="text-[11px] font-semibold text-[#8A887F] uppercase tracking-wider block mb-1.5">Period</label>
+              <select value={months} onChange={(e) => setMonths(Number(e.target.value))}
+                className="w-full rounded-xl border border-[#E5E2D9] bg-white px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#556045]/40">
+                <option value={6}>Last 6 months</option>
+                <option value={12}>Last 12 months</option>
+                <option value={24}>Last 24 months</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div className="rounded-2xl border border-[#E5E2D9] bg-white/50 p-3 text-center">
+              <div className="font-serif-display text-xl text-[#2D2C28]">{usd(premiumPaid)}</div>
+              <div className="text-[10px] text-[#8A887F] uppercase tracking-wider">Premiums paid</div>
+            </div>
+            <div className="rounded-2xl border border-[#E5E2D9] bg-white/50 p-3 text-center">
+              <div className="font-serif-display text-xl text-[#2D2C28]">{usd(reimbursed)}</div>
+              <div className="text-[10px] text-[#8A887F] uppercase tracking-wider">Reimbursed</div>
+            </div>
+            <div className="rounded-2xl border border-[#E5E2D9] bg-white/50 p-3 text-center">
+              <div className={`font-serif-display text-xl ${net >= 0 ? "text-[#2F6B45]" : "text-[#8C2D14]"}`}>{net >= 0 ? "+" : "−"}{usd(Math.abs(net))}</div>
+              <div className="text-[10px] text-[#8A887F] uppercase tracking-wider">Net position</div>
+            </div>
+          </div>
+
+          {verdict ? (
+            <div className={`rounded-2xl border p-4 ${toneStyles[verdict.tone]}`}>
+              <div className="font-semibold text-sm mb-1">{verdict.title}</div>
+              <p className="text-xs leading-relaxed">{verdict.note}</p>
+              <p className="text-[11px] opacity-70 mt-2">
+                Based on {counted} claim{counted === 1 ? "" : "s"} in this window. Reimbursements use your logged
+                actual amounts where available, otherwise our estimates. Guidance only — not financial advice.
+              </p>
+            </div>
+          ) : (
+            <p className="text-xs text-[#8A887F]">Enter your monthly premium above to see whether your policy is paying off.</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Claims() {
   const { t } = useTranslation();
   const [insurer, setInsurer]             = useState("");
@@ -415,6 +531,8 @@ export default function Claims() {
           </div>
         </div>
       )}
+
+      {!isFreeTier && <InsuranceWorthItCard claims={previousClaims} />}
 
       <div className={`grid grid-cols-1 xl:grid-cols-[420px_1fr] gap-5 items-start ${isFreeTier ? "opacity-50 pointer-events-none select-none" : ""}`}>
 
