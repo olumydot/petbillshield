@@ -13,7 +13,7 @@ Sections
 /admin/portal/promos         — Stripe promo / coupon management
 /admin/portal/feedback       — feedback viewer
 """
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, UploadFile, File, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, EmailStr
 from typing import Optional, List
@@ -27,6 +27,7 @@ from app.shared import (
     STRIPE_API_KEY,
     stripe_sdk, uuid,
     PLANS,
+    UPLOAD_ROOT, check_magic_bytes,
 )
 
 router = APIRouter()
@@ -848,6 +849,39 @@ async def portal_audience_count(
 ):
     recipients = await _get_segment_emails(segment)
     return {"count": len(recipients), "segment": segment}
+
+
+_IMG_EXT = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif"}
+
+
+@router.post("/admin/portal/upload-image")
+async def portal_upload_image(
+    request: Request,
+    file: UploadFile = File(...),
+    _: User = Depends(require_admin),
+):
+    """Upload an image for use in broadcast emails/newsletters. Saved to the
+    public /uploads/broadcast/ folder and returns an absolute URL that email
+    clients can load."""
+    if file.content_type not in _IMG_EXT:
+        raise HTTPException(status_code=400, detail="Use JPG, PNG, WEBP, or GIF.")
+    contents = await file.read()
+    if len(contents) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Image must be under 5MB.")
+    # GIF magic bytes aren't in the shared helper; allow it explicitly.
+    if file.content_type != "image/gif" and not check_magic_bytes(contents, file.content_type):
+        raise HTTPException(status_code=400, detail="File content does not match the declared image type.")
+
+    folder = UPLOAD_ROOT / "broadcast"
+    folder.mkdir(parents=True, exist_ok=True)
+    filename = f"img_{uuid.uuid4().hex[:16]}.{_IMG_EXT[file.content_type]}"
+    with open(folder / filename, "wb") as f:
+        f.write(contents)
+
+    # Absolute URL so it loads inside email clients (relative paths won't work).
+    base = str(request.base_url).rstrip("/")
+    url = f"{base}/uploads/broadcast/{filename}"
+    return {"url": url}
 
 
 class BroadcastRequest(BaseModel):

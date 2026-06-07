@@ -3,6 +3,8 @@ import api from "../lib/api";
 import { clearBillingCache } from "../lib/billing";
 
 const AUTH_CACHE_KEY = "petbill_user_cache";
+const IDLE_LIMIT_MS  = 30 * 60 * 1000;          // 30 minutes of inactivity
+const LAST_ACTIVITY_KEY = "petbill_last_activity";
 
 // Read cached user synchronously so the very first render already knows
 // who is logged in. Avoids any loading flash for returning users.
@@ -48,7 +50,7 @@ export function AuthProvider({ children }) {
     }
   }, [_setUser]);
 
-  const logout = useCallback(async () => {
+  const logout = useCallback(async (opts = {}) => {
     try {
       await api.post("/auth/logout");
     } catch {}
@@ -57,12 +59,57 @@ export function AuthProvider({ children }) {
     localStorage.removeItem("petbill_auth_next");
     localStorage.removeItem(AUTH_CACHE_KEY);
     localStorage.removeItem("petbill_sidebar"); // clear so next login starts expanded
+    localStorage.removeItem(LAST_ACTIVITY_KEY);
     clearBillingCache();
 
     setUser(null);
 
-    window.location.assign("/");
+    // After an idle timeout, send the user to login with a notice flag.
+    window.location.assign(opts.idle ? "/auth?reason=timeout" : "/");
   }, []);
+
+  // ── 30-minute inactivity auto-logout ───────────────────────────────────────
+  // Resets on real user activity (throttled), persists last-activity in
+  // localStorage so it works across tabs and survives a refresh, and checks on
+  // an interval + when the tab regains focus (covers a laptop being closed).
+  useEffect(() => {
+    if (!user) return undefined;
+
+    const now = () => Date.now();
+    let lastWrite = 0;
+
+    const markActivity = () => {
+      const t = now();
+      if (t - lastWrite < 5000) return;       // throttle writes to once / 5s
+      lastWrite = t;
+      try { localStorage.setItem(LAST_ACTIVITY_KEY, String(t)); } catch {}
+    };
+
+    const checkIdle = () => {
+      let last = Number(localStorage.getItem(LAST_ACTIVITY_KEY) || 0);
+      if (!last) { markActivity(); return; }
+      if (now() - last >= IDLE_LIMIT_MS) {
+        logout({ idle: true });
+      }
+    };
+
+    // Treat the current load as activity, then start watching.
+    markActivity();
+
+    const activityEvents = ["mousemove", "mousedown", "keydown", "scroll", "touchstart", "click"];
+    activityEvents.forEach((e) => window.addEventListener(e, markActivity, { passive: true }));
+
+    const onVisible = () => { if (document.visibilityState === "visible") checkIdle(); };
+    document.addEventListener("visibilitychange", onVisible);
+
+    const interval = setInterval(checkIdle, 30 * 1000);   // check every 30s
+
+    return () => {
+      clearInterval(interval);
+      activityEvents.forEach((e) => window.removeEventListener(e, markActivity));
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [user, logout]);
 
   useEffect(() => {
     // CRITICAL: If returning from OAuth callback, skip the /me check.

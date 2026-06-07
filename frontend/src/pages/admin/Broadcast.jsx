@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Send, Sparkles, Loader2, Users, Check } from "lucide-react";
+import { useState, useRef } from "react";
+import { Send, Sparkles, Loader2, Users, Check, ImagePlus } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import ConfirmModal from "@/components/ConfirmModal";
@@ -25,6 +25,42 @@ export default function Broadcast() {
   const [history,     setHistory]     = useState(null);
   const [showHistory, setShowHistory] = useState(false);
   const [showSendConfirm, setShowSendConfirm] = useState(false);
+  const [uploadingImg, setUploadingImg] = useState(false);
+  const fileRef = useRef(null);
+  const bodyRef = useRef(null);
+
+  const insertAtCursor = (snippet) => {
+    const el = bodyRef.current;
+    if (!el) { setBody((b) => `${b}\n${snippet}\n`); return; }
+    const start = el.selectionStart ?? body.length;
+    const end   = el.selectionEnd ?? body.length;
+    const next  = `${body.slice(0, start)}\n${snippet}\n${body.slice(end)}`;
+    setBody(next);
+    // restore focus after state update
+    requestAnimationFrame(() => { el.focus(); el.selectionStart = el.selectionEnd = start + snippet.length + 2; });
+  };
+
+  const onPickImage = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same file
+    if (!file) return;
+    setUploadingImg(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const { data } = await api.post("/admin/portal/upload-image", fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      // Responsive, email-safe <img> with inline styles
+      const img = `<img src="${data.url}" alt="" style="max-width:100%;height:auto;display:block;border-radius:8px;margin:16px 0;" />`;
+      insertAtCursor(img);
+      toast.success("Image inserted into the body.");
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Image upload failed");
+    } finally {
+      setUploadingImg(false);
+    }
+  };
 
   const checkAudience = async () => {
     setCounting(true);
@@ -154,11 +190,26 @@ export default function Broadcast() {
           />
         </div>
         <div>
-          <label className="text-[10px] uppercase tracking-widest text-[#65635C] font-semibold block mb-1.5">Body</label>
-          <textarea value={body} onChange={e => setBody(e.target.value)} rows={10}
-            placeholder="Email body (plain text — will be wrapped in PetBill Shield template)…"
-            className="w-full rounded-xl border border-[#2A2924] bg-[#111] text-[#FAF9F6] text-sm px-3 py-2.5 placeholder:text-[#65635C] focus:outline-none focus:ring-1 focus:ring-[#D26D53] resize-none"
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-[10px] uppercase tracking-widest text-[#65635C] font-semibold">Body</label>
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              disabled={uploadingImg}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-[#2A2924] bg-[#1A1917] hover:bg-[#2A2924] text-[#E6AE2E] text-xs font-semibold px-2.5 py-1 transition disabled:opacity-40"
+            >
+              {uploadingImg ? <Loader2 size={11} className="animate-spin" /> : <ImagePlus size={11} />}
+              {uploadingImg ? "Uploading…" : "Add image"}
+            </button>
+            <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={onPickImage} className="hidden" />
+          </div>
+          <textarea ref={bodyRef} value={body} onChange={e => setBody(e.target.value)} rows={10}
+            placeholder="Email body — plain text becomes paragraphs. Use 'Add image' to insert a hosted image; you can also paste raw HTML (links, <img>, <strong>)."
+            className="w-full rounded-xl border border-[#2A2924] bg-[#111] text-[#FAF9F6] text-sm px-3 py-2.5 placeholder:text-[#65635C] focus:outline-none focus:ring-1 focus:ring-[#D26D53] resize-none font-mono"
           />
+          <p className="text-[11px] text-[#65635C] mt-1.5">
+            Images are hosted publicly and embedded as responsive <code>&lt;img&gt;</code> tags. Send yourself a test first.
+          </p>
         </div>
       </div>
 
