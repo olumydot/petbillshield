@@ -135,9 +135,14 @@ async def root():
     return {"app": "PetBill Shield", "status": "ok"}
 
 # Serve uploads from the configurable UPLOAD_ROOT (persistent disk in prod).
+# Be defensive: a misconfigured/unwritable disk must not crash app startup.
 uploads_dir = UPLOAD_ROOT
-uploads_dir.mkdir(parents=True, exist_ok=True)
-app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
+try:
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+except Exception as e:
+    logger.warning(f"Could not create uploads dir {uploads_dir}: {e}")
+# check_dir=False so the mount still registers even if the dir isn't ready yet.
+app.mount("/uploads", StaticFiles(directory=str(uploads_dir), check_dir=False), name="uploads")
 
 async def _rate_limit_handler(request, exc: RateLimitExceeded):
     return JSONResponse(status_code=429, content={"detail": "Too many requests. Please try again in a minute."})

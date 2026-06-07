@@ -187,8 +187,15 @@ UPLOAD_ROOT = Path(os.environ.get("UPLOAD_DIR", str(ROOT_DIR / "uploads")))
 ESTIMATE_UPLOAD_DIR = UPLOAD_ROOT / "estimates"
 CLAIM_UPLOAD_DIR = UPLOAD_ROOT / "claims"
 
-ESTIMATE_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-CLAIM_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+# Create upload dirs, but NEVER crash the whole app at import time if the path
+# isn't writable (e.g. a misconfigured persistent disk). Log and continue — the
+# per-request upload handlers also mkdir defensively and will surface a clean
+# error to the user instead of crash-looping the entire service.
+for _d in (UPLOAD_ROOT, ESTIMATE_UPLOAD_DIR, CLAIM_UPLOAD_DIR):
+    try:
+        _d.mkdir(parents=True, exist_ok=True)
+    except Exception as _e:
+        logging.getLogger("petbill").warning(f"Could not create upload dir {_d}: {_e}")
 
 STRIPE_API_KEY = os.environ.get('STRIPE_API_KEY')
 RESEND_API_KEY = os.environ.get('RESEND_API_KEY')
