@@ -2,6 +2,7 @@ import "@/App.css";
 import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, useLocation, Navigate } from "react-router-dom";
 import { Toaster } from "sonner";
+import { Analytics } from "@vercel/analytics/react";
 
 import { AuthProvider } from "@/context/AuthContext";
 import AuthCallback from "@/components/AuthCallback";
@@ -116,6 +117,7 @@ function App() {
         <AuthProvider>
           <AppRouter />
           <Toaster richColors position="top-right" />
+          <Analytics />
         </AuthProvider>
       </BrowserRouter>
     </div>
